@@ -139,6 +139,8 @@ public class SessionManager {
                 LOG.error("Failed to send message to session {}: {}", session.getId(), e.getMessage());
                 return false;
             }
+        } else {
+            LOG.error("Session is not opened");
         }
         return false;
     }
