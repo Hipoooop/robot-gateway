@@ -17,7 +17,7 @@
   "author": "WildfireChat",
   "license": "MIT",
   "dependencies": {
-    "@wildfirechat/server-sdk": "file:../../server-sdk.js",
+    "@wildfirechat/server-sdk": "^1.0.0",
     "ws": "^8.16.0"
   }
 }

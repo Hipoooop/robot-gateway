@@ -1,4 +1,9 @@
 import { Conversation, MessagePayload } from '@wildfirechat/robot-gateway-client-sdk';
+import { 
+    StreamingTextGeneratingMessageContent,
+    StreamingTextGeneratedMessageContent,
+    TextMessageContent
+} from '@wildfirechat/server-sdk';
 import { Channel, Message, Session, OpenclawOutMessage } from '../openclaw/protocol/OpenclawOutMessage.js';
 
 /**
@@ -73,7 +78,7 @@ export class MessageConverter {
             );
             openclawMessage.session = new Session(sessionId);
 
-            console.debug(`Converted Wildfire message: threadId=${channel.threadId}, peerId=${channel.peerId}, isGroup=${channel.isGroup}`);
+
 
             return openclawMessage;
 
@@ -105,44 +110,32 @@ export class MessageConverter {
                 line: 0
             };
 
-            // 构建消息内容
-            let payload;
+            // 构建消息内容（使用具体的消息内容类）
+            // 首先创建默认的文本消息 payload
+            const textContent = new TextMessageContent();
+            textContent.content = message.text || '';
+            let payload = textContent.encode();
 
-            // 提取流式消息元数据
+            // 提取流式消息元数据，如果是流式消息则替换 payload
             if (message.extra) {
                 const streamId = message.extra.streamId;
                 const state = message.extra.state;
                 
-                // 流式消息：使用特定的消息内容类型
+                // 只在特定的流式状态下替换 payload
                 if (state === 'generating' || state === 'start') {
-                    // StreamTextGeneratingMessageContent
-                    // type = 14, searchableContent = text, content = streamId
-                    payload = {
-                        type: 14,  // StreamingText_Generationg
-                        searchableContent: message.text || '',
-                        content: streamId
-                    };
+                    // 流式生成中
+                    const generatingContent = new StreamingTextGeneratingMessageContent();
+                    generatingContent.text = message.text || '';
+                    generatingContent.streamId = streamId;
+                    payload = generatingContent.encode();
                 } else if (state === 'completed') {
-                    // StreamTextGeneratedMessageContent
-                    // type = 15, searchableContent = text, content = streamId
-                    payload = {
-                        type: 15,  // StreamingText_Generated
-                        searchableContent: message.text || '',
-                        content: streamId
-                    };
-                } else {
-                    // 普通文本消息
-                    payload = {
-                        type: 1,  // 文本消息
-                        searchableContent: message.text || ''
-                    };
+                    // 流式生成完成
+                    const generatedContent = new StreamingTextGeneratedMessageContent();
+                    generatedContent.text = message.text || '';
+                    generatedContent.streamId = streamId;
+                    payload = generatedContent.encode();
                 }
-            } else {
-                // 普通文本消息
-                payload = {
-                    type: 1,  // 文本消息
-                    searchableContent: message.text || ''
-                };
+                // 其他状态保持默认的文本消息 payload
             }
 
             const result = {
@@ -155,7 +148,7 @@ export class MessageConverter {
                 streamState: message.extra ? message.extra.state : null
             };
 
-            console.debug(`Converted Openclaw message: target=${result.targetUserId}, isGroup=${result.isGroup}, text=${result.text ? result.text.substring(0, 50) : 'null'}...`);
+
 
             return result;
 

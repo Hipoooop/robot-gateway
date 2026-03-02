@@ -20,6 +20,9 @@ export class OpenclawBridge {
         this.messageConverter = new MessageConverter();
         this.whitelistFilter = new WhitelistFilter(config.openclaw);
         this.groupFilter = new GroupFilter(config.openclaw);
+        
+        // 去重：记录已处理完成的 runId，防止重复发送（在 Bridge 级别持久化，不受客户端重连影响）
+        this.completedRunIds = new Map();
 
         // 消息处理器（实现 MessageHandler 接口）
         this.messageHandler = {
@@ -212,7 +215,6 @@ export class OpenclawBridge {
         console.warn(`Disconnected from Openclaw Gateway: code=${code}, reason=${reason}`);
         // 触发重连逻辑
         if (this.running) {
-            console.log('Attempting to reconnect to Openclaw Gateway...');
             this.scheduleOpenclawReconnect();
         }
     }
@@ -227,7 +229,17 @@ export class OpenclawBridge {
         }
 
         try {
-            console.log(`Received response from Openclaw: text=${response.message?.text ? response.message.text.substring(0, 50) : 'null'}...`);
+            const streamId = response.message?.extra?.streamId;
+            const state = response.message?.extra?.state;
+            
+            // 检查是否是 completed 状态的重复消息
+            if (state === 'completed' && streamId) {
+                if (this.completedRunIds.has(streamId)) {
+                    return;
+                }
+                // 标记为已处理
+                this.completedRunIds.set(streamId, Date.now());
+            }
 
             // 1. 转换为野火格式
             const wfMessage = this.messageConverter.convertFromOpenclaw(response);
@@ -316,7 +328,6 @@ export class OpenclawBridge {
      */
     scheduleOpenclawReconnect() {
         if (this.isReconnecting) {
-            console.debug('Already reconnecting to Openclaw, skipping');
             return;
         }
 

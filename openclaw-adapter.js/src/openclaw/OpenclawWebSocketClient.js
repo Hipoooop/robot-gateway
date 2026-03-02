@@ -125,7 +125,6 @@ export class OpenclawWebSocketClient {
      * 处理连接挑战
      */
     handleChallenge(resolveConnect, rejectConnect) {
-        console.log('Received connect challenge from Openclaw Gateway');
         this.sendConnectRequest(resolveConnect, rejectConnect);
     }
 
@@ -214,7 +213,7 @@ export class OpenclawWebSocketClient {
                     isGroup: pendingRequest.isGroup,
                     timestamp: Date.now()
                 });
-                console.debug(`Saved message context for runId=${runId}, sender=${pendingRequest.senderId}`);
+    
             }
         }
     }
@@ -235,7 +234,7 @@ export class OpenclawWebSocketClient {
                 }
                 break;
             case 'typing':
-                if (this.messageHandler) {
+                if (this.messageHandler && this.messageHandler.onTyping) {
                     this.messageHandler.onTyping(msg);
                 }
                 break;
@@ -278,11 +277,8 @@ export class OpenclawWebSocketClient {
         // 查找消息上下文
         const context = this.messageContexts.get(runId);
         if (!context) {
-            console.debug(`No context found for runId=${runId}, skipping agent event`);
             return;
         }
-
-        console.debug(`Agent event: runId=${runId}, text=${text.substring(0, 50)}, sender=${context.senderId}`);
 
         // 构建流式消息
         const response = {
@@ -328,8 +324,6 @@ export class OpenclawWebSocketClient {
                 }
             }
         }
-
-        console.debug(`Chat event: state=${state}, runId=${runId}`);
 
         // 查找消息上下文
         const context = this.messageContexts.get(runId);
@@ -395,7 +389,7 @@ export class OpenclawWebSocketClient {
             const request = new RequestMessage(requestId, 'chat.send', chatParams);
             this.send(JSON.stringify(request));
 
-            console.log(`Sent chat.send request: text=${chatParams.message.substring(0, 50)}, sender=${senderId}`);
+
 
             // 记录待处理的请求
             this.pendingRequests.set(requestId, {
@@ -450,15 +444,10 @@ export class OpenclawWebSocketClient {
      */
     cleanupExpiredMessageContexts() {
         const now = Date.now();
-        let removedCount = 0;
         for (const [runId, context] of this.messageContexts) {
             if (now - context.timestamp > MESSAGE_CONTEXT_TIMEOUT_MS) {
                 this.messageContexts.delete(runId);
-                removedCount++;
             }
-        }
-        if (removedCount > 0) {
-            console.debug(`Cleaned up ${removedCount} expired message contexts`);
         }
     }
 
