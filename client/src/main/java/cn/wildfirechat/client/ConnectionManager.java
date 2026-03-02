@@ -10,7 +10,9 @@ import java.util.HashMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 连接管理器
@@ -24,6 +26,8 @@ class ConnectionManager {
     private final String gatewayUrl;
     private final long reconnectInterval;
     private final long heartbeatInterval;
+    private final long maxReconnectInterval;
+    private final int maxReconnectAttempts;
 
     private volatile boolean running = false;
     private volatile boolean connected = false;
@@ -32,7 +36,10 @@ class ConnectionManager {
     private volatile String robotSecret;
 
     private ScheduledExecutorService heartbeatExecutor;
+    private ScheduledExecutorService reconnectExecutor;
+    private volatile ScheduledFuture<?> reconnectFuture;
     private volatile long lastHeartbeatTime;
+    private final AtomicInteger reconnectAttempts = new AtomicInteger(0);
 
     public ConnectionManager(String gatewayUrl, MessageHandler messageHandler) {
         this(gatewayUrl, messageHandler, 5000, 270000); // 默认5秒重连，270秒(4.5分钟)心跳
@@ -43,10 +50,26 @@ class ConnectionManager {
     }
 
     public ConnectionManager(String gatewayUrl, MessageHandler messageHandler, long reconnectInterval, long heartbeatInterval) {
+        this(gatewayUrl, messageHandler, reconnectInterval, heartbeatInterval, 60000, 0); // 默认最大重连间隔60秒，无限重试
+    }
+
+    /**
+     * 创建连接管理器
+     * @param gatewayUrl 网关地址
+     * @param messageHandler 消息处理器
+     * @param reconnectInterval 初始重连间隔（毫秒）
+     * @param heartbeatInterval 心跳间隔（毫秒）
+     * @param maxReconnectInterval 最大重连间隔（毫秒）
+     * @param maxReconnectAttempts 最大重试次数（0表示无限重试）
+     */
+    public ConnectionManager(String gatewayUrl, MessageHandler messageHandler, long reconnectInterval, 
+                             long heartbeatInterval, long maxReconnectInterval, int maxReconnectAttempts) {
         this.gatewayUrl = gatewayUrl;
         this.messageHandler = messageHandler;
         this.reconnectInterval = reconnectInterval;
         this.heartbeatInterval = heartbeatInterval;
+        this.maxReconnectInterval = maxReconnectInterval;
+        this.maxReconnectAttempts = maxReconnectAttempts;
         this.client = new RobotGatewayClient(gatewayUrl, messageHandler, this);
     }
 
@@ -142,8 +165,14 @@ class ConnectionManager {
         robotId = null;
         robotSecret = null;
 
+        // 取消待执行的重连任务
+        cancelReconnect();
+
         // 停止心跳
         stopHeartbeat();
+
+        // 停止重连执行器
+        stopReconnectExecutor();
 
         if (client.isOpen()) {
             client.close();
@@ -175,13 +204,34 @@ class ConnectionManager {
             return;
         }
 
+        // 检查是否超过最大重试次数
+        if (maxReconnectAttempts > 0 && reconnectAttempts.get() >= maxReconnectAttempts) {
+            LOG.error("Max reconnect attempts ({}) reached, giving up", maxReconnectAttempts);
+            running = false;
+            if (messageHandler != null) {
+                messageHandler.onConnectionChanged(false);
+            }
+            return;
+        }
+
+        int currentAttempt = reconnectAttempts.incrementAndGet();
+        LOG.info("Reconnecting to gateway: {} (attempt {})", gatewayUrl, currentAttempt);
+
         try {
-            LOG.info("Reconnecting to gateway: {}", gatewayUrl);
             client.reconnect();
         } catch (Exception e) {
             LOG.error("Failed to reconnect: {}", e.getMessage());
             scheduleReconnect();
         }
+    }
+
+    /**
+     * 计算退避后的重连间隔（指数退避策略）
+     */
+    private long getBackoffInterval() {
+        // 指数退避：interval * 2^attempts，但不超过最大值
+        long backoff = reconnectInterval * (1L << Math.min(reconnectAttempts.get(), 10)); // 最多左移10位，避免溢出
+        return Math.min(backoff, maxReconnectInterval);
     }
 
     /**
@@ -192,17 +242,56 @@ class ConnectionManager {
             return;
         }
 
-        LOG.info("Scheduling reconnect in {} ms", reconnectInterval);
-        new Thread(() -> {
-            try {
-                Thread.sleep(reconnectInterval);
-                if (running && !connected) {
-                    reconnect();
-                }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+        // 取消之前可能存在的重连任务
+        cancelReconnect();
+
+        long backoffInterval = getBackoffInterval();
+        LOG.info("Scheduling reconnect in {} ms (attempt {})", backoffInterval, reconnectAttempts.get());
+
+        if (reconnectExecutor == null || reconnectExecutor.isShutdown()) {
+            reconnectExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread thread = new Thread(r, "ReconnectThread");
+                thread.setDaemon(true);
+                return thread;
+            });
+        }
+
+        reconnectFuture = reconnectExecutor.schedule(() -> {
+            if (running && !connected) {
+                reconnect();
             }
-        }, "ReconnectThread").start();
+        }, backoffInterval, TimeUnit.MILLISECONDS);
+    }
+
+    /**
+     * 取消待执行的重连任务
+     */
+    private void cancelReconnect() {
+        if (reconnectFuture != null && !reconnectFuture.isDone()) {
+            reconnectFuture.cancel(false);
+            reconnectFuture = null;
+        }
+    }
+
+    /**
+     * 停止重连执行器（异步关闭，不阻塞）
+     */
+    private void stopReconnectExecutor() {
+        if (reconnectExecutor != null && !reconnectExecutor.isShutdown()) {
+            reconnectExecutor.shutdown();
+            // 异步等待关闭，不阻塞当前线程
+            new Thread(() -> {
+                try {
+                    if (!reconnectExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                        reconnectExecutor.shutdownNow();
+                    }
+                } catch (InterruptedException e) {
+                    reconnectExecutor.shutdownNow();
+                    Thread.currentThread().interrupt();
+                }
+            }, "ReconnectExecutorShutdownThread").start();
+            reconnectExecutor = null;
+        }
     }
 
     /**
@@ -211,6 +300,9 @@ class ConnectionManager {
     public void onConnected() {
         connected = true;
         LOG.info("Connected to gateway");
+
+        // 重置重连计数器
+        reconnectAttempts.set(0);
 
         // 如果有保存的鉴权信息，自动重新鉴权
         if (robotId != null && robotSecret != null && !authenticated) {
@@ -370,21 +462,25 @@ class ConnectionManager {
     }
 
     /**
-     * 停止心跳
+     * 停止心跳（异步关闭，不阻塞）
      */
     private void stopHeartbeat() {
         if (heartbeatExecutor != null && !heartbeatExecutor.isShutdown()) {
-            heartbeatExecutor.shutdown();
-            try {
-                if (!heartbeatExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
-                    heartbeatExecutor.shutdownNow();
-                }
-            } catch (InterruptedException e) {
-                heartbeatExecutor.shutdownNow();
-                Thread.currentThread().interrupt();
-            }
+            ScheduledExecutorService executor = heartbeatExecutor;
             heartbeatExecutor = null;
-            LOG.info("Heartbeat stopped");
+            executor.shutdown();
+            // 异步等待关闭，不阻塞当前线程
+            new Thread(() -> {
+                try {
+                    if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
+                        executor.shutdownNow();
+                    }
+                } catch (InterruptedException e) {
+                    executor.shutdownNow();
+                    Thread.currentThread().interrupt();
+                }
+                LOG.info("Heartbeat stopped");
+            }, "HeartbeatShutdownThread").start();
         }
     }
 

@@ -33,8 +33,8 @@ public class RobotFatherService {
     @Value("${im.url}")
     private String imUrl;
 
-    // 内存缓存：用户ID -> 机器人信息
-    private final Map<String, RobotInfo> userRobotCache = new HashMap<>();
+    // 内存缓存：用户ID -> 机器人信息（线程安全）
+    private final Map<String, RobotInfo> userRobotCache = new ConcurrentHashMap<>();
 
     // 已使用的robotId集合，用于快速检查重复
     private final Set<String> usedRobotIds = ConcurrentHashMap.newKeySet();

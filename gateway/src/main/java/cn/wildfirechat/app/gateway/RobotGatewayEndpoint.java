@@ -162,11 +162,12 @@ public class RobotGatewayEndpoint extends TextWebSocketHandler {
         // 更新心跳时间
         sessionManager.updateHeartbeatTime(sessionId);
 
-        // 返回心跳响应
-        ResponseMessage response = ResponseMessage.success(request.getRequestId(), System.currentTimeMillis());
-        sessionManager.sendMessage(session, response);
-
-        LOG.debug("Heartbeat received from robot {}: {}", robotId, sessionId);
+        // 返回心跳响应（检查session是否仍然打开）
+        if (session.isOpen()) {
+            ResponseMessage response = ResponseMessage.success(request.getRequestId(), System.currentTimeMillis());
+            sessionManager.sendMessage(session, response);
+            LOG.debug("Heartbeat received from robot {}: {}", robotId, sessionId);
+        }
     }
 
     @Override

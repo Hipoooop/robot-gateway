@@ -83,10 +83,21 @@ public class ServiceImpl implements Service {
         // ==========================================
 
         // 原有的网关业务：转发给对应的机器人客户端
-        if (sessionManager.sendMessageToRobot(targetRobotId, PushMessage.message(messageData))) {
-            LOG.info("Message sent to robot {}", targetRobotId);
+        int connectionCount = sessionManager.getConnectionCount(targetRobotId);
+        LOG.info("Robot {} has {} active connection(s)", targetRobotId, connectionCount);
+
+        if (connectionCount == 0) {
+            LOG.warn("Robot {} not connected, message {} not delivered", targetRobotId, messageData.getMessageId());
+            return;
+        }
+
+        boolean sent = sessionManager.sendMessageToRobot(targetRobotId, PushMessage.message(messageData));
+        if (sent) {
+            LOG.info("Message {} sent to robot {} ({} connection(s))", 
+                    messageData.getMessageId(), targetRobotId, connectionCount);
         } else {
-            LOG.warn("Robot {} not connected, message not delivered", targetRobotId);
+            LOG.error("Failed to send message {} to robot {} ({} connection(s))", 
+                    messageData.getMessageId(), targetRobotId, connectionCount);
         }
     }
 
