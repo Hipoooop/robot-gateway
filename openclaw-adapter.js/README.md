@@ -22,42 +22,29 @@
 
 ## 安装
 
+### 全局安装（推荐）
+
 ```bash
-# 克隆仓库后进入目录
-cd openclaw-adapter.js
+npm install -g @wildfirechat/openclaw-adapter
+```
 
-# 安装依赖
-npm install
+### 本地安装
 
-# 如果使用 yarn
-yarn install
+```bash
+npm install @wildfirechat/openclaw-adapter
 ```
 
 ## 配置
 
-### 配置文件位置
+### 自动创建配置（全局安装）
 
-配置文件优先查找顺序：
-1. 命令行 `-config` 参数指定的文件
-2. `~/.wf-openclaw-adapter/config.json` （默认位置）
-3. 环境变量
+安装完成后，会自动创建配置目录 `~/.wf-openclaw-adapter/`，包含示例配置文件。
 
-### 创建配置目录和文件
+### 手动创建配置
 
 ```bash
-# 创建配置目录
 mkdir -p ~/.wf-openclaw-adapter
-
-# 复制示例配置
-cp config.example.json ~/.wf-openclaw-adapter/config.json
-
-# 编辑配置
-nano ~/.wf-openclaw-adapter/config.json
-```
-
-### 配置示例
-
-```json
+cat > ~/.wf-openclaw-adapter/config.json << 'EOF'
 {
   "wildfire": {
     "gateway": {
@@ -69,7 +56,7 @@ nano ~/.wf-openclaw-adapter/config.json
   "openclaw": {
     "gateway": {
       "url": "ws://127.0.0.1:18789",
-      "token": "47ad97ccf12a4cf3ed799dc7dfc94690990c67348f4cf242",
+      "token": "your-token",
       "scope": "wildfire-im",
       "reconnectInterval": 5000,
       "heartbeatInterval": 30000
@@ -91,6 +78,7 @@ nano ~/.wf-openclaw-adapter/config.json
     "port": 8080
   }
 }
+EOF
 ```
 
 ### 配置说明
@@ -136,34 +124,57 @@ nano ~/.wf-openclaw-adapter/config.json
 所有配置项都可通过环境变量覆盖：
 
 ```bash
-WILDFIRE_GATEWAY_URL=ws://localhost:8884/robot/gateway \
-WILDFIRE_ROBOT_ID=mybot \
-WILDFIRE_ROBOT_SECRET=secret \
-OPENCLAW_GATEWAY_URL=ws://127.0.0.1:18789 \
-OPENCLAW_GATEWAY_TOKEN=xxx \
-SERVER_PORT=8080 \
-node bin/openclaw-adapter.js
+export WILDFIRE_GATEWAY_URL=ws://localhost:8884/robot/gateway
+export WILDFIRE_ROBOT_ID=mybot
+export WILDFIRE_ROBOT_SECRET=secret
+export OPENCLAW_GATEWAY_URL=ws://127.0.0.1:18789
+export OPENCLAW_GATEWAY_TOKEN=xxx
+export SERVER_PORT=8080
 ```
 
 ## 使用
 
-### 启动
+### 启动（全局安装后）
 
 ```bash
 # 使用默认配置路径 (~/.wf-openclaw-adapter/config.json)
-npm start
+openclaw-adapter
 
-# 或使用 yarn
-yarn start
+# 或使用别名
+wf-openclaw
 
 # 指定配置文件
-node bin/openclaw-adapter.js -config ./my-config.json
+openclaw-adapter -config ./my-config.json
 
-# 开发模式（使用当前目录的 config.json）
-npm run dev
+# 显示帮助
+openclaw-adapter --help
+
+# 显示版本
+openclaw-adapter --version
 ```
 
-### 健康检查
+### 使用 npx（无需全局安装）
+
+```bash
+npx @wildfirechat/openclaw-adapter
+```
+
+### 作为依赖使用
+
+```javascript
+import { OpenclawBridge, Config, HealthServer } from '@wildfirechat/openclaw-adapter';
+
+const config = new Config().get();
+const bridge = new OpenclawBridge(config);
+const healthServer = new HealthServer(config.server.port, bridge);
+
+await healthServer.start();
+await bridge.start();
+```
+
+## 健康检查
+
+启动后可以通过以下接口检查状态：
 
 ```bash
 # 健康检查
@@ -240,7 +251,8 @@ curl http://localhost:8080/test
 ```
 openclaw-adapter.js/
 ├── bin/
-│   └── openclaw-adapter.js          # 启动脚本
+│   ├── openclaw-adapter.js          # 启动脚本
+│   └── setup.js                     # 安装后设置脚本
 ├── src/
 │   ├── index.js                     # 主入口
 │   ├── core/
@@ -248,7 +260,7 @@ openclaw-adapter.js/
 │   ├── openclaw/
 │   │   ├── OpenclawWebSocketClient.js
 │   │   └── protocol/
-│   │       ├── OpenclawProtocol.js  # 协议定义
+│   │       ├── OpenclawProtocol.js
 │   │       ├── OpenclawInMessage.js
 │   │       └── OpenclawOutMessage.js
 │   ├── converter/
@@ -268,21 +280,23 @@ openclaw-adapter.js/
 ## 依赖
 
 - `@wildfirechat/robot-gateway-client-sdk` - 野火机器人网关客户端SDK
+- `@wildfirechat/server-sdk` - 野火IM服务端SDK（提供消息内容类）
 - `ws` - WebSocket客户端
 
-## 日志
+## Docker 部署
 
-关键日志：
-- `Connected to Wildfire Gateway` - 野火连接成功
-- `Waiting for connect challenge event` - 等待Openclaw认证
-- `Openclaw Gateway connection authenticated` - Openclaw认证成功
-- `Converted Wildfire message to Openclaw` - 消息转换成功
-- `Message from sender=xxx is not in whitelist, ignoring` - 白名单过滤
-- `Message ignored by whitelist filter` - 白名单拦截
-- `Group filter blocked the message` - 群聊策略拦截
-- `Successfully sent message to Wildfire` - 发送成功
-- `Agent event: runId=` - 流式消息生成中
-- `Chat event: state=final` - 流式消息完成
+```dockerfile
+FROM node:18-alpine
+
+RUN npm install -g @wildfirechat/openclaw-adapter
+
+# 复制配置文件
+COPY config.json /root/.wf-openclaw-adapter/config.json
+
+EXPOSE 8080
+
+CMD ["openclaw-adapter"]
+```
 
 ## 故障排查
 
@@ -291,39 +305,25 @@ openclaw-adapter.js/
 1. **检查白名单配置**
    - 确认`openclaw.whitelist.enabled`设置
    - 验证用户/群组ID是否在白名单中
-   - 查看日志中的白名单过滤记录
 
 2. **检查群聊策略**
    - 确认`openclaw.group.enabled`设置
    - 检查是否被@或包含关键词
-   - 查看日志中的群聊策略过滤记录
 
 3. **检查Openclaw Gateway**
    - 确认Openclaw Gateway是否运行
-   - 检查网络连接（`telnet 127.0.0.1 18789`）
+   - 检查网络连接
    - 验证token配置
 
-### 群聊不回复
+### 查看日志
 
-1. 检查群聊策略是否启用
-2. 检查是否被@或包含关键词
-3. 查看日志中的过滤记录
-4. 验证白名单配置
+```bash
+# 前台运行查看日志
+openclaw-adapter
 
-### 野火连接断开
-
-- Adapter会自动重连（SDK内置）
-- 检查网关地址配置
-- 查看鉴权信息
-
-### 流式消息异常
-
-**现象**：流式消息中断或状态不正确
-
-**处理**：
-1. 检查日志中的runId匹配情况
-2. 确认Openclaw Gateway的流式事件是否正常
-3. 查看agent和chat事件的处理记录
+# 或使用 DEBUG 环境变量查看详细日志
+DEBUG=* openclaw-adapter
+```
 
 ## 许可证
 

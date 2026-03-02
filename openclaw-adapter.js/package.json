@@ -1,15 +1,17 @@
 {
   "name": "@wildfirechat/openclaw-adapter",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "野火IM与Openclaw Gateway的桥接适配器 (Node.js版)",
   "main": "src/index.js",
   "type": "module",
   "bin": {
-    "openclaw-adapter": "./bin/openclaw-adapter.js"
+    "openclaw-adapter": "./bin/openclaw-adapter.js",
+    "wf-openclaw": "./bin/openclaw-adapter.js"
   },
   "scripts": {
     "start": "node bin/openclaw-adapter.js",
-    "dev": "node bin/openclaw-adapter.js -config ./config.json"
+    "dev": "node bin/openclaw-adapter.js -config ./config.json",
+    "postinstall": "node bin/setup.js"
   },
   "keywords": [
     "wildfirechat",
@@ -17,10 +19,23 @@
     "adapter",
     "bridge",
     "ai",
-    "gateway"
+    "gateway",
+    "im",
+    "websocket"
   ],
   "author": "WildfireChat",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wildfirechat/robot-gateway.git"
+  },
+  "bugs": {
+    "url": "https://github.com/wildfirechat/robot-gateway/issues"
+  },
+  "homepage": "https://github.com/wildfirechat/robot-gateway#readme",
+  "engines": {
+    "node": ">=16.0.0"
+  },
   "dependencies": {
     "@wildfirechat/robot-gateway-client-sdk": "^1.0.0",
     "@wildfirechat/server-sdk": "^1.0.0",

@@ -16,9 +16,30 @@
  *   SERVER_PORT                - HTTP健康检查端口
  */
 
-import { Config } from '../src/config/Config.js';
-import { OpenclawBridge } from '../src/core/OpenclawBridge.js';
-import { HealthServer } from '../src/server/HealthServer.js';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// 根据环境选择导入方式
+let Config, OpenclawBridge, HealthServer;
+
+try {
+    // 首先尝试从已安装的包导入（生产环境）
+    const pkg = await import('@wildfirechat/openclaw-adapter');
+    Config = pkg.Config;
+    OpenclawBridge = pkg.OpenclawBridge;
+    HealthServer = pkg.HealthServer;
+} catch {
+    // 回退到相对路径（开发环境）
+    const configModule = await import(join(__dirname, '../src/config/Config.js'));
+    const bridgeModule = await import(join(__dirname, '../src/core/OpenclawBridge.js'));
+    const serverModule = await import(join(__dirname, '../src/server/HealthServer.js'));
+    Config = configModule.Config;
+    OpenclawBridge = bridgeModule.OpenclawBridge;
+    HealthServer = serverModule.HealthServer;
+}
 
 // 解析命令行参数
 function parseArgs() {
