@@ -1,0 +1,33 @@
+{
+  "wildfire": {
+    "gateway": {
+      "url": "ws://localhost:8884/robot/gateway",
+      "robotId": "YourRobotId",
+      "robotSecret": "YourRobotSecret"
+    }
+  },
+  "openclaw": {
+    "gateway": {
+      "url": "ws://127.0.0.1:18789",
+      "token": "47ad97ccf12a4cf3ed799dc7dfc94690990c67348f4cf242",
+      "scope": "wildfire-im",
+      "reconnectInterval": 5000,
+      "heartbeatInterval": 30000
+    },
+    "whitelist": {
+      "enabled": true,
+      "allowedUsers": ["user1", "user2"],
+      "allowedGroups": ["group1"]
+    },
+    "group": {
+      "enabled": true,
+      "respondOnMention": true,
+      "respondOnQuestion": true,
+      "helpKeywords": "帮,请,分析,总结,怎么,如何",
+      "allowedIds": ["group1", "group2"]
+    }
+  },
+  "server": {
+    "port": 8080
+  }
+}
