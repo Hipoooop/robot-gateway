@@ -12,6 +12,7 @@
 - ✅ **上下文管理**：使用runId跟踪消息上下文，确保正确回复
 - ✅ **自动重连**：双方断线自动重连（最多重试10次）
 - ✅ **健康检查**：提供HTTP接口监控状态
+- ✅ **守护进程**：支持后台运行，带启动/停止/重启/状态管理
 
 ## 架构
 
@@ -136,6 +137,8 @@ export SERVER_PORT=8080
 
 ### 启动（全局安装后）
 
+#### 前台运行（调试模式）
+
 ```bash
 # 使用默认配置路径 (~/.wf-openclaw-adapter/config.json)
 openclaw-adapter
@@ -152,6 +155,35 @@ openclaw-adapter --help
 # 显示版本
 openclaw-adapter --version
 ```
+
+#### 后台守护进程模式（生产环境推荐）
+
+```bash
+# 方式1：使用 -d/--daemon 参数启动
+openclaw-adapter -d
+openclaw-adapter --daemon
+
+# 方式2：使用 start 命令启动
+openclaw-adapter start
+
+# 指定配置文件启动守护进程
+openclaw-adapter start -config ./my-config.json
+
+# 查看守护进程状态
+openclaw-adapter status
+
+# 停止守护进程
+openclaw-adapter stop
+
+# 重启守护进程
+openclaw-adapter restart
+```
+
+守护进程模式特点：
+- 在后台运行，不占用终端
+- 自动记录日志到 `~/.wf-openclaw-adapter/openclaw-adapter.log`
+- 错误日志记录到 `~/.wf-openclaw-adapter/openclaw-adapter.error.log`
+- PID 文件保存在 `~/.wf-openclaw-adapter/openclaw-adapter.pid`
 
 ### 使用 npx（无需全局安装）
 
@@ -323,7 +355,23 @@ openclaw-adapter
 
 # 或使用 DEBUG 环境变量查看详细日志
 DEBUG=* openclaw-adapter
+
+# 查看守护进程日志
+tail -f ~/.wf-openclaw-adapter/openclaw-adapter.log
+tail -f ~/.wf-openclaw-adapter/openclaw-adapter.error.log
 ```
+
+### 守护进程问题
+
+**无法启动守护进程**
+1. 检查是否有权限写入 `~/.wf-openclaw-adapter/` 目录
+2. 检查端口是否被占用
+3. 查看错误日志：`cat ~/.wf-openclaw-adapter/openclaw-adapter.error.log`
+
+**守护进程无法停止**
+1. 手动查找进程：`ps aux | grep openclaw-adapter`
+2. 手动终止：`kill -9 <PID>`
+3. 删除 PID 文件：`rm ~/.wf-openclaw-adapter/openclaw-adapter.pid`
 
 ## 许可证
 
