@@ -370,7 +370,9 @@ Openclaw Adapter - 野火IM与Openclaw Gateway的桥接适配器
 
 // 显示版本
 function showVersion() {
-    console.log('Openclaw Adapter v1.0.2');
+    const pkgPath = join(__dirname, '..', 'package.json');
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+    console.log(`Openclaw Adapter v${pkg.version}`);
 }
 
 // 主函数
