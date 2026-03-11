@@ -39,29 +39,30 @@ public class RobotProxy {
         String sessionId = session.getId();
         String method = request.getMethod();
         List<Object> params = request.getParams();
+        String requestId = request.getRequestId();
 
-        LOG.info("Handling request from session {}: method={}", sessionId, method);
+        LOG.info("Handling request from session {}: method={}, requestId={}", sessionId, method, requestId);
 
         // 检查鉴权状态
         if (!sessionManager.isAuthenticated(sessionId)) {
-            return ResponseMessage.error(null, 401, "Not authenticated");
+            return ResponseMessage.error(requestId, 401, "Not authenticated");
         }
 
         // 获取会话对应的RobotService实例
         RobotService robotService = sessionManager.getRobotService(sessionId);
         if (robotService == null) {
-            return ResponseMessage.error(request.getRequestId(), 500, "Robot service not found");
+            return ResponseMessage.error(requestId, 500, "Robot service not found");
         }
 
         if("setCallback".equals(method) || "getCallback".equals(method) || "deleteCallback".equals(method)) {
-            return ResponseMessage.error(request.getRequestId(), 400, "Bad Request(" + method + ")");
+            return ResponseMessage.error(requestId, 400, "Bad Request(" + method + ")");
         }
 
         try {
             // 查找方法
             Method targetMethod = findMethod(robotService.getClass(), method, params);
             if (targetMethod == null) {
-                return ResponseMessage.error(null, 404, "Method not found: " + method);
+                return ResponseMessage.error(requestId, 404, "Method not found: " + method);
             }
 
             // 转换参数类型并调用方法
@@ -76,36 +77,98 @@ public class RobotProxy {
                 }
             }
             // 返回成功结果
-            return ResponseMessage.success(null, result);
+            return ResponseMessage.success(requestId, result);
 
         } catch (IllegalArgumentException e) {
             LOG.error("Invalid arguments for method {}: {}", method, e.getMessage());
-            return ResponseMessage.error(null, 400, "Invalid arguments: " + e.getMessage());
+            return ResponseMessage.error(requestId, 400, "Invalid arguments: " + e.getMessage());
         } catch (Exception e) {
             LOG.error("Failed to execute method {}: {}", method, e.getMessage(), e);
-            return ResponseMessage.error(null, 500, "Failed to execute: " + e.getMessage());
+            return ResponseMessage.error(requestId, 500, "Failed to execute: " + e.getMessage());
         }
     }
 
     /**
      * 查找匹配的方法
+     * 通过参数数量和参数类型进行匹配
      */
     private Method findMethod(Class<?> clazz, String methodName, List<Object> params) {
+        int paramCount = (params != null) ? params.size() : 0;
+        Method bestMatch = null;
+        int bestMatchScore = -1;
+
         for (Method method : clazz.getMethods()) {
-            if (method.getName().equals(methodName)) {
-                // 简单匹配：检查参数数量
-                if (method.getParameterCount() == (params != null ? params.size() : 0)) {
-                    return method;
+            if (!method.getName().equals(methodName)) {
+                continue;
+            }
+
+            Class<?>[] paramTypes = method.getParameterTypes();
+
+            // 检查参数数量
+            if (paramTypes.length != paramCount) {
+                continue;
+            }
+
+            // 计算匹配分数（类型兼容的参数数量）
+            int score = 0;
+            boolean allCompatible = true;
+            for (int i = 0; i < paramCount; i++) {
+                Object param = params.get(i);
+                if (param == null) {
+                    // null 可以匹配任何非基本类型
+                    if (!paramTypes[i].isPrimitive()) {
+                        score++;
+                    }
+                } else if (isCompatibleType(param.getClass(), paramTypes[i])) {
+                    score++;
+                } else {
+                    // 类型不兼容，但可能通过 Gson 转换
+                    allCompatible = false;
                 }
             }
-        }
-        // 尝试查找可变参数的方法
-        for (Method method : clazz.getMethods()) {
-            if (method.getName().equals(methodName)) {
+
+            // 完全类型匹配的优先
+            if (allCompatible && score == paramCount) {
                 return method;
             }
+
+            // 记录最佳匹配
+            if (score > bestMatchScore) {
+                bestMatchScore = score;
+                bestMatch = method;
+            }
         }
-        return null;
+
+        return bestMatch;
+    }
+
+    /**
+     * 检查类型是否兼容
+     */
+    private boolean isCompatibleType(Class<?> sourceType, Class<?> targetType) {
+        if (targetType.isAssignableFrom(sourceType)) {
+            return true;
+        }
+        // 处理基本类型和包装类型
+        if (targetType.isPrimitive()) {
+            if (targetType == int.class && (sourceType == Integer.class || sourceType == Long.class || sourceType == Short.class)) return true;
+            if (targetType == long.class && (sourceType == Long.class || sourceType == Integer.class || sourceType == Short.class)) return true;
+            if (targetType == double.class && (sourceType == Double.class || sourceType == Float.class || sourceType == Integer.class || sourceType == Long.class)) return true;
+            if (targetType == float.class && (sourceType == Float.class || sourceType == Double.class || sourceType == Integer.class || sourceType == Long.class)) return true;
+            if (targetType == boolean.class && sourceType == Boolean.class) return true;
+            if (targetType == short.class && (sourceType == Short.class || sourceType == Integer.class || sourceType == Long.class)) return true;
+            if (targetType == byte.class && (sourceType == Byte.class || sourceType == Integer.class)) return true;
+        }
+        // 包装类型和基本类型互转
+        if (sourceType == Integer.class && targetType == int.class) return true;
+        if (sourceType == Long.class && targetType == long.class) return true;
+        if (sourceType == Double.class && targetType == double.class) return true;
+        if (sourceType == Float.class && targetType == float.class) return true;
+        if (sourceType == Boolean.class && targetType == boolean.class) return true;
+        if (sourceType == Short.class && targetType == short.class) return true;
+        if (sourceType == Byte.class && targetType == byte.class) return true;
+
+        return false;
     }
 
     /**
@@ -120,7 +183,19 @@ public class RobotProxy {
             Object param = params.get(i);
 
             if (param == null) {
-                args[i] = null;
+                // 基本类型需要默认值
+                if (paramTypes[i] == int.class) args[i] = 0;
+                else if (paramTypes[i] == long.class) args[i] = 0L;
+                else if (paramTypes[i] == double.class) args[i] = 0.0;
+                else if (paramTypes[i] == float.class) args[i] = 0.0f;
+                else if (paramTypes[i] == boolean.class) args[i] = false;
+                else if (paramTypes[i] == short.class) args[i] = (short) 0;
+                else if (paramTypes[i] == byte.class) args[i] = (byte) 0;
+                else if (paramTypes[i] == char.class) args[i] = '\u0000';
+                else args[i] = null;
+            } else if (isCompatibleType(param.getClass(), paramTypes[i])) {
+                // 类型兼容，直接使用
+                args[i] = param;
             } else {
                 // 将参数转换为JSON字符串，再转换为目标类型
                 String json = gson.toJson(param);

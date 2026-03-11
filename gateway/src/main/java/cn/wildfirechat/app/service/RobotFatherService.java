@@ -18,6 +18,8 @@ import org.springframework.stereotype.Service;
 import javax.annotation.PostConstruct;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
 
 /**
  * RobotFather 服务类
@@ -35,6 +37,9 @@ public class RobotFatherService {
 
     // 内存缓存：用户ID -> 机器人信息（线程安全）
     private final Map<String, RobotInfo> userRobotCache = new ConcurrentHashMap<>();
+    // 缓存过期时间：30分钟
+    private final Map<String, Long> cacheTimestamp = new ConcurrentHashMap<>();
+    private static final long CACHE_EXPIRY_MS = 30 * 60 * 1000;
 
     // 已使用的robotId集合，用于快速检查重复
     private final Set<String> usedRobotIds = ConcurrentHashMap.newKeySet();
@@ -62,8 +67,8 @@ public class RobotFatherService {
      * @return 机器人信息
      */
     public RobotInfo getOrCreateRobot(String userId) {
-        // 先从缓存查找
-        RobotInfo cached = userRobotCache.get(userId);
+        // 先从缓存查找（自动处理过期）
+        RobotInfo cached = getCachedRobotInfo(userId);
         if (cached != null) {
             LOG.info("Found cached robot for user: {}, robotId: {}", userId, cached.getRobotId());
             return cached;
@@ -107,7 +112,7 @@ public class RobotFatherService {
                             }
                             RobotInfo info = new RobotInfo(robot.getUserId(), robot.getSecret());
                             // 缓存机器人信息
-                            userRobotCache.put(userId, info);
+                            cacheRobotInfo(userId, info);
                             addRobotFriend(userId, robot.getUserId());
                             // 发送欢迎消息
                             sendWelcomeMessage(userId, robot.getUserId(), robot.getSecret(), robot.getDisplayName());
@@ -144,11 +149,12 @@ public class RobotFatherService {
      * @param robotDisplayName 机器人显示名称
      */
     private void sendWelcomeMessage(String userId, String robotId, String robotSecret, String robotDisplayName) {
+        RobotService robotService = null;
         try {
             LOG.info("Sending welcome message from robot {} to user {}", robotId, userId);
 
             // 创建机器人服务实例
-            RobotService robotService = new RobotService(imUrl, robotId, robotSecret);
+            robotService = new RobotService(imUrl, robotId, robotSecret);
 
             // 构建会话（私聊）
             Conversation conversation = new Conversation();
@@ -179,6 +185,15 @@ public class RobotFatherService {
 
         } catch (Exception e) {
             LOG.error("Exception when sending welcome message from {} to {}", robotId, userId, e);
+        } finally {
+            // 确保关闭 RobotService 资源
+            if (robotService != null) {
+                try {
+                    robotService.close();
+                } catch (Exception e) {
+                    LOG.error("Failed to close robot service: {}", e.getMessage());
+                }
+            }
         }
     }
 
@@ -228,7 +243,7 @@ public class RobotFatherService {
                 if (output != null) {
                     RobotInfo info = new RobotInfo(output.getUserId(), output.getSecret());
                     // 缓存机器人信息
-                    userRobotCache.put(userId, info);
+                    cacheRobotInfo(userId, info);
                     LOG.info("Robot created successfully for user: {}, robotId: {}", userId, output.getUserId());
                     addRobotFriend(userId, info.getRobotId());
                     
@@ -262,8 +277,7 @@ public class RobotFatherService {
      * @return 6位随机数字字符串
      */
     private String generate6DigitRandom() {
-        Random random = new Random();
-        int num = 100000 + random.nextInt(900000); // 100000 ~ 999999
+        int num = 100000 + ThreadLocalRandom.current().nextInt(900000); // 100000 ~ 999999
         return String.valueOf(num);
     }
 
@@ -315,8 +329,8 @@ public class RobotFatherService {
      * @return 机器人信息，如果用户没有机器人则返回null
      */
     public RobotInfo getUserCurrentRobot(String userId) {
-        // 先从缓存查找
-        RobotInfo cached = userRobotCache.get(userId);
+        // 先从缓存查找（自动处理过期）
+        RobotInfo cached = getCachedRobotInfo(userId);
         if (cached != null) {
             return cached;
         }
@@ -350,7 +364,7 @@ public class RobotFatherService {
                         if (robot != null) {
                             RobotInfo info = new RobotInfo(robot.getUserId(), robot.getSecret());
                             // 缓存机器人信息
-                            userRobotCache.put(userId, info);
+                            cacheRobotInfo(userId, info);
                             return info;
                         }
                     }
@@ -368,11 +382,61 @@ public class RobotFatherService {
     }
 
     /**
+     * 缓存机器人信息（带时间戳）
+     */
+    private void cacheRobotInfo(String userId, RobotInfo info) {
+        userRobotCache.put(userId, info);
+        cacheTimestamp.put(userId, System.currentTimeMillis());
+    }
+
+    /**
+     * 检查缓存是否过期
+     */
+    private boolean isCacheExpired(String userId) {
+        Long timestamp = cacheTimestamp.get(userId);
+        if (timestamp == null) {
+            return true;
+        }
+        return System.currentTimeMillis() - timestamp > CACHE_EXPIRY_MS;
+    }
+
+    /**
+     * 获取缓存的机器人信息，自动处理过期
+     */
+    private RobotInfo getCachedRobotInfo(String userId) {
+        if (isCacheExpired(userId)) {
+            userRobotCache.remove(userId);
+            cacheTimestamp.remove(userId);
+            return null;
+        }
+        return userRobotCache.get(userId);
+    }
+
+    /**
      * 清除用户缓存
      * @param userId 用户ID
      */
     public void clearUserCache(String userId) {
         userRobotCache.remove(userId);
+        cacheTimestamp.remove(userId);
+    }
+
+    /**
+     * 清理过期缓存
+     */
+    public void cleanupExpiredCache() {
+        long now = System.currentTimeMillis();
+        int count = 0;
+        for (Map.Entry<String, Long> entry : cacheTimestamp.entrySet()) {
+            if (now - entry.getValue() > CACHE_EXPIRY_MS) {
+                userRobotCache.remove(entry.getKey());
+                cacheTimestamp.remove(entry.getKey());
+                count++;
+            }
+        }
+        if (count > 0) {
+            LOG.info("Cleaned up {} expired cache entries", count);
+        }
     }
 
     /**
@@ -384,7 +448,7 @@ public class RobotFatherService {
         RobotInfo info = userRobotCache.get(userId);
         if (info != null) {
             RobotInfo newInfo = new RobotInfo(info.getRobotId(), newSecret);
-            userRobotCache.put(userId, newInfo);
+            cacheRobotInfo(userId, newInfo);
         }
     }
 
@@ -447,7 +511,7 @@ public class RobotFatherService {
                 if (output != null) {
                     RobotInfo newInfo = new RobotInfo(output.getUserId(), output.getSecret());
                     // 更新缓存
-                    userRobotCache.put(userId, newInfo);
+                    cacheRobotInfo(userId, newInfo);
                     LOG.info("Robot secret reset successfully for: {}", robotId);
                     return newInfo;
                 }

@@ -47,14 +47,19 @@ public class WebSocketConfig implements WebSocketConfigurer {
         };
     }
 
+    // 最大文本消息大小：60KB
+    private static final int MAX_TEXT_MESSAGE_SIZE = 60 * 1024;
+    // 最大二进制消息大小：60KB（当前不使用二进制消息）
+    private static final int MAX_BINARY_MESSAGE_SIZE = 60 * 1024;
+
     /**
      * 配置WebSocket容器缓冲区大小
      */
     @Bean
     public ServletServerContainerFactoryBean createWebSocketContainer() {
         ServletServerContainerFactoryBean container = new ServletServerContainerFactoryBean();
-        container.setMaxTextMessageBufferSize(8192);
-        container.setMaxBinaryMessageBufferSize(8192);
+        container.setMaxTextMessageBufferSize(MAX_TEXT_MESSAGE_SIZE);
+        container.setMaxBinaryMessageBufferSize(MAX_BINARY_MESSAGE_SIZE);
         container.setMaxSessionIdleTimeout(300000L);
         return container;
     }

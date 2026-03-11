@@ -47,6 +47,9 @@ public class SessionManager {
     // 心跳超时时间（毫秒）- 5分钟
     private static final long HEARTBEAT_TIMEOUT = 5 * 60 * 1000;
 
+    // 未鉴权会话超时时间（毫秒）- 1分钟
+    private static final long UNAUTHENTICATED_TIMEOUT = 60 * 1000;
+
     @PostConstruct
     public void init() {
         LOG.info("SessionManager initialized");
@@ -155,6 +158,7 @@ public class SessionManager {
 
     /**
      * 通过机器人ID获取所有会话
+     * 返回的是快照，避免遍历期间的并发修改问题
      */
     public Set<WebSocketSession> getSessionsByRobotId(String robotId) {
         Set<WebSocketSession> result = new java.util.HashSet<>();
@@ -163,7 +167,9 @@ public class SessionManager {
             return result;
         }
 
-        for (String sessionId : sessionIds) {
+        // 创建快照以避免在发送消息期间会话被关闭
+        List<String> sessionIdSnapshot = new ArrayList<>(sessionIds);
+        for (String sessionId : sessionIdSnapshot) {
             WebSocketSession session = sessions.get(sessionId);
             if (session != null && session.isOpen()) {
                 result.add(session);
@@ -266,12 +272,16 @@ public class SessionManager {
         private String robotId;
         private RobotService robotService;
         private volatile long lastHeartbeatTime;
+        private final long createTime;
 
         public SessionInfo(String sessionId) {
             this.sessionId = sessionId;
             this.authenticated = false;
             this.lastHeartbeatTime = System.currentTimeMillis();
+            this.createTime = System.currentTimeMillis();
         }
+
+        public long getCreateTime() { return createTime; }
 
         public String getSessionId() { return sessionId; }
         public boolean isAuthenticated() { return authenticated; }
@@ -302,32 +312,42 @@ public class SessionManager {
     }
 
     /**
-     * 定时清理超时的心跳会话（只清理已鉴权的）
+     * 定时清理超时的心跳会话（已鉴权）和未鉴权会话
      * 每60秒执行一次
      */
     @Scheduled(fixedRate = 60000)
     public void cleanupExpiredSessions() {
         long now = System.currentTimeMillis();
-        int count = 0;
+        int expiredCount = 0;
+        int unauthCount = 0;
         List<String> toRemove = new ArrayList<>();
 
         for (Map.Entry<String, SessionInfo> entry : sessionInfos.entrySet()) {
             SessionInfo info = entry.getValue();
             if (info.isAuthenticated()) {
+                // 清理已鉴权但超时的会话
                 long lastHeartbeat = info.getLastHeartbeatTime();
                 if (now - lastHeartbeat > HEARTBEAT_TIMEOUT) {
                     toRemove.add(entry.getKey());
+                    expiredCount++;
+                }
+            } else {
+                // 清理未鉴权且超时的会话
+                long createTime = info.getCreateTime();
+                if (now - createTime > UNAUTHENTICATED_TIMEOUT) {
+                    toRemove.add(entry.getKey());
+                    unauthCount++;
                 }
             }
         }
 
         for (String sessionId : toRemove) {
             removeSessionById(sessionId);
-            count++;
         }
 
-        if (count > 0) {
-            LOG.info("Cleaned up {} expired sessions, remaining: {}", count, sessions.size());
+        if (expiredCount > 0 || unauthCount > 0) {
+            LOG.info("Cleaned up {} expired (heartbeat) and {} unauthenticated sessions, remaining: {}", 
+                    expiredCount, unauthCount, sessions.size());
         }
     }
 

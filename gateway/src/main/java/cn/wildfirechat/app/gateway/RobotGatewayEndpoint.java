@@ -24,6 +24,9 @@ public class RobotGatewayEndpoint extends TextWebSocketHandler {
 
     private static final Logger LOG = LoggerFactory.getLogger(RobotGatewayEndpoint.class);
 
+    // 最大消息大小：60KB（与 WebSocketConfig 保持一致）
+    private static final int MAX_MESSAGE_SIZE = 60 * 1024;
+
     @Autowired
     private SessionManager sessionManager;
 
@@ -47,6 +50,22 @@ public class RobotGatewayEndpoint extends TextWebSocketHandler {
     protected void handleTextMessage(WebSocketSession session, TextMessage message) {
         String payload = message.getPayload();
         String sessionId = session.getId();
+
+        // 检查消息大小
+        if (payload.length() > MAX_MESSAGE_SIZE) {
+            LOG.warn("Message too large from session {}: {} bytes (max: {})", 
+                    sessionId, payload.length(), MAX_MESSAGE_SIZE);
+            if (session.isOpen()) {
+                try {
+                    // 1008: Policy Violation - 消息过大
+                    session.close(new CloseStatus(1008, "Message too large"));
+                } catch (Exception e) {
+                    LOG.error("Failed to close session after large message: {}", e.getMessage());
+                }
+            }
+            return;
+        }
+
         LOG.debug("Received message from {}: {}", sessionId, payload);
 
         // 检查session是否仍然有效
