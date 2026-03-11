@@ -23,6 +23,25 @@ export class OpenclawBridge {
         
         // 去重：记录已处理完成的 runId，防止重复发送（在 Bridge 级别持久化，不受客户端重连影响）
         this.completedRunIds = new Map();
+        // 定期清理已完成的 runId，防止内存泄漏
+        this.completedRunIdsCleanupTimer = null;
+        
+        // 重连统计（用于日志抑制和断路器）
+        this.reconnectStats = {
+            totalAttempts: 0,
+            lastLogTime: 0,
+            consecutiveFailures: 0,
+            firstFailureTime: 0,      // 第一次失败时间（用于断路器）
+            lastReconnectTime: 0,     // 上次重连时间（用于速率限制）
+            circuitOpen: false        // 断路器状态
+        };
+        
+        // 断路器配置
+        this.circuitBreaker = {
+            failureThreshold: 30,      // 30 次连续失败开启断路器
+            timeoutMs: 5 * 60 * 1000,  // 断路器开启 5 分钟
+            minIntervalMs: 1000        // 最小重连间隔 1 秒（防止burst）
+        };
 
         // 消息处理器（实现 MessageHandler 接口）
         this.messageHandler = {
@@ -111,6 +130,11 @@ export class OpenclawBridge {
     async stop() {
         this.running = false;
 
+        if (this.completedRunIdsCleanupTimer) {
+            clearInterval(this.completedRunIdsCleanupTimer);
+            this.completedRunIdsCleanupTimer = null;
+        }
+
         if (this.wildfireClient) {
             this.wildfireClient.close();
             this.wildfireClient = null;
@@ -122,6 +146,27 @@ export class OpenclawBridge {
         }
 
         console.log('Openclaw Bridge stopped');
+    }
+
+    /**
+     * 启动 completedRunIds 清理定时器
+     */
+    startCompletedRunIdsCleanup() {
+        // 每 10 分钟清理一次，保留 1 小时内的记录
+        this.completedRunIdsCleanupTimer = setInterval(() => {
+            const now = Date.now();
+            const maxAge = 60 * 60 * 1000; // 1 小时
+            let cleaned = 0;
+            for (const [runId, timestamp] of this.completedRunIds) {
+                if (now - timestamp > maxAge) {
+                    this.completedRunIds.delete(runId);
+                    cleaned++;
+                }
+            }
+            if (cleaned > 0) {
+                console.debug(`Cleaned up ${cleaned} expired runIds`);
+            }
+        }, 10 * 60 * 1000); // 10 分钟
     }
 
     // ==================== Wildfire Message Handler ====================
@@ -206,13 +251,29 @@ export class OpenclawBridge {
      */
     onOpenclawConnected() {
         console.log('Connected to Openclaw Gateway');
+        // 重置重连统计
+        this.reconnectStats.consecutiveFailures = 0;
+        this.reconnectStats.totalAttempts = 0;
+        
+        // 启动清理定时器（如果未启动）
+        if (!this.completedRunIdsCleanupTimer) {
+            this.startCompletedRunIdsCleanup();
+        }
     }
 
     /**
      * Openclaw 连接断开
      */
     onOpenclawDisconnected(code, reason) {
-        console.warn(`Disconnected from Openclaw Gateway: code=${code}, reason=${reason}`);
+        // 抑制频繁断开日志：如果正在重连中且 60 秒内已打印过，则使用 debug 级别
+        const now = Date.now();
+        if (this.isReconnecting && now - this.reconnectStats.lastLogTime < 60000) {
+            console.debug(`Disconnected from Openclaw Gateway: code=${code}, reason=${reason}`);
+        } else {
+            console.warn(`Disconnected from Openclaw Gateway: code=${code}, reason=${reason}`);
+        }
+        this.reconnectStats.lastLogTime = now;
+        
         // 触发重连逻辑
         if (this.running) {
             this.scheduleOpenclawReconnect();
@@ -325,67 +386,189 @@ export class OpenclawBridge {
 
     /**
      * 调度 Openclaw 重连
+     * 
+     * 重连策略：
+     * 1. 使用指数退避算法，初始间隔 1 秒，最大间隔 60 秒
+     * 2. 断路器保护：连续失败 30 次后暂停 5 分钟
+     * 3. 速率限制：最小重连间隔 1 秒，防止 burst
+     * 4. 日志抑制：同一重连周期内只打印关键日志
+     * 5. 连接成功后重置退避计数
+     * 
+     * 防并发说明：
+     * Node.js 是单线程的，但可能存在以下情况导致多次触发：
+     * 1. WebSocket 的 error 和 close 事件可能相继触发
+     * 2. 旧连接的事件处理器未及时清理，在创建新连接时旧事件触发
+     * 3. 网络延迟导致连接超时的同时收到断开事件
+     * 
+     * 解决方案：
+     * 1. isReconnecting 标志防止重复进入重连循环
+     * 2. lastReconnectTime 实现速率限制（1秒内只重连一次）
+     * 3. closeConnection() 中清理所有事件处理器
      */
     scheduleOpenclawReconnect() {
-        if (this.isReconnecting) {
+        const now = Date.now();
+        
+        // 速率限制：确保两次重连之间至少间隔 1 秒
+        // 这是主要的防 burst 机制
+        if (now - this.reconnectStats.lastReconnectTime < this.circuitBreaker.minIntervalMs) {
+            console.debug('[Bridge] Reconnect rate limited, skipping');
             return;
         }
-
+        
+        // 检查断路器状态
+        if (this.reconnectStats.circuitOpen) {
+            if (now - this.reconnectStats.firstFailureTime < this.circuitBreaker.timeoutMs) {
+                console.debug('[Bridge] Circuit breaker is open, skipping reconnect');
+                return;
+            }
+            // 断路器超时，尝试半开状态
+            console.log('[Bridge] Circuit breaker entering half-open state');
+            this.reconnectStats.circuitOpen = false;
+            this.reconnectStats.consecutiveFailures = 0;
+        }
+        
+        // 检查是否已在重连中
+        // 注意：Node.js 是单线程的，这里不需要多线程锁
+        // 但同一个事件循环 tick 中可能多次调用此方法
+        if (this.isReconnecting) {
+            console.debug('[Bridge] Reconnection already in progress');
+            return;
+        }
+        
         this.isReconnecting = true;
+        this.reconnectStats.lastReconnectTime = now;
+        
+        // 在后台执行重连，不阻塞
+        this._doReconnect().catch(err => {
+            console.error('[Bridge] Unexpected error in reconnection loop:', err);
+            this.isReconnecting = false;
+        });
+    }
 
-        setTimeout(async () => {
-            try {
-                let retryCount = 0;
-                const maxRetries = 10;
-                const retryInterval = this.config.openclaw.gateway.reconnectInterval;
+    /**
+     * 执行重连逻辑（内部方法）
+     * 
+     * 安全特性：
+     * 1. 指数退避：重连间隔从 5 秒开始，最大 60 秒
+     * 2. 断路器：连续失败 30 次后暂停 5 分钟
+     * 3. 优雅关闭：确保旧连接完全关闭后再创建新连接
+     * 4. 连接超时：每个连接最多 15 秒
+     */
+    async _doReconnect() {
+        const baseInterval = this.config.openclaw.gateway.reconnectInterval || 5000;
+        const maxInterval = 60000; // 最大间隔 60 秒
+        let attemptInThisCycle = 0;
+        
+        // 记录本次重连周期的开始时间
+        const cycleStartTime = Date.now();
+        const cycleStartAttempts = this.reconnectStats.totalAttempts;
+        
+        // 记录第一次失败时间（用于断路器）
+        if (this.reconnectStats.consecutiveFailures === 0) {
+            this.reconnectStats.firstFailureTime = Date.now();
+        }
+        
+        try {
+            while (this.running && !this.isOpenclawConnected()) {
+                // 断路器检查
+                if (this.reconnectStats.consecutiveFailures >= this.circuitBreaker.failureThreshold) {
+                    console.error(`[Bridge] Circuit breaker opened after ${this.reconnectStats.consecutiveFailures} consecutive failures. Pausing for ${this.circuitBreaker.timeoutMs / 1000}s`);
+                    this.reconnectStats.circuitOpen = true;
+                    this.isReconnecting = false;
+                    return;
+                }
+                
+                this.reconnectStats.totalAttempts++;
+                this.reconnectStats.consecutiveFailures++;
+                attemptInThisCycle++;
+                
+                // 计算指数退避间隔
+                const backoffMultiplier = Math.min(
+                    Math.pow(2, Math.max(0, this.reconnectStats.consecutiveFailures - 1)),
+                    maxInterval / baseInterval
+                );
+                const retryInterval = Math.min(baseInterval * backoffMultiplier, maxInterval);
+                
+                // 日志抑制
+                const shouldLog = attemptInThisCycle <= 2 || 
+                                  this.reconnectStats.consecutiveFailures % 10 === 0;
+                
+                if (shouldLog) {
+                    console.log(`[Bridge] Reconnecting (total: ${this.reconnectStats.totalAttempts}, consecutive failures: ${this.reconnectStats.consecutiveFailures}, next retry in ${retryInterval}ms)`);
+                }
 
-                while (this.running && retryCount < maxRetries && !this.isOpenclawConnected()) {
-                    retryCount++;
-                    console.log(`Reconnecting to Openclaw Gateway (attempt ${retryCount}/${maxRetries}): ${this.config.openclaw.gateway.url}`);
+                try {
+                    // 优雅关闭旧连接（确保事件处理器被清理）
+                    if (this.openclawClient) {
+                        console.debug('[Bridge] Closing old connection before reconnect');
+                        this.openclawClient.closeConnection();
+                        // 等待一小段时间确保连接完全关闭
+                        await sleep(100);
+                        this.openclawClient = null;
+                    }
+                    
+                    // 创建新的连接
+                    this.openclawClient = new OpenclawWebSocketClient(
+                        this.config.openclaw,
+                        this.openclawMessageHandler
+                    );
+                    
+                    // 使用 Promise.race 实现连接超时
+                    const connectTimeout = 15000; // 15 秒连接超时
+                    await Promise.race([
+                        this.openclawClient.connect(),
+                        new Promise((_, reject) => 
+                            setTimeout(() => reject(new Error('Connection timeout')), connectTimeout)
+                        )
+                    ]);
 
-                    try {
-                        // 创建新的连接
-                        this.openclawClient = new OpenclawWebSocketClient(
-                            this.config.openclaw,
-                            this.openclawMessageHandler
-                        );
-                        await this.openclawClient.connect();
-
-                        // 等待认证完成
-                        let waitCount = 0;
-                        const maxWait = 50; // 5秒
-                        while (!this.openclawClient.isConnected() && waitCount < maxWait) {
-                            await sleep(100);
-                            waitCount++;
-                        }
-
-                        if (this.openclawClient.isConnected()) {
-                            console.log('Successfully reconnected to Openclaw Gateway');
-                            break;
-                        } else {
-                            console.warn(`Openclaw Gateway reconnection attempt ${retryCount} failed`);
-                        }
-
-                    } catch (error) {
-                        console.error(`Error reconnecting to Openclaw Gateway (attempt ${retryCount}):`, error.message);
+                    // 等待认证完成（最多 5 秒）
+                    let waitCount = 0;
+                    const maxWait = 50; // 5秒
+                    while (!this.openclawClient.isConnected() && waitCount < maxWait) {
+                        await sleep(100);
+                        waitCount++;
                     }
 
-                    // 等待一段时间后重试
-                    if (retryCount < maxRetries && !this.isOpenclawConnected()) {
-                        await sleep(retryInterval);
+                    if (this.openclawClient.isConnected()) {
+                        const cycleAttempts = this.reconnectStats.totalAttempts - cycleStartAttempts;
+                        console.log(`[Bridge] Successfully reconnected after ${cycleAttempts} attempt(s)`);
+                        this.reconnectStats.consecutiveFailures = 0;
+                        this.reconnectStats.firstFailureTime = 0;
+                        this.isReconnecting = false;
+                        break;
+                    } else {
+                        console.debug('[Bridge] Reconnection failed: authentication timeout');
+                        // 认证超时，关闭连接
+                        this.openclawClient.closeConnection();
+                    }
+
+                } catch (error) {
+                    const errorMsg = error.message || 'Unknown error';
+                    if (shouldLog) {
+                        console.error(`[Bridge] Reconnection error:`, errorMsg);
+                    }
+                    // 出错时确保连接被关闭
+                    if (this.openclawClient) {
+                        this.openclawClient.closeConnection();
                     }
                 }
 
-                if (!this.isOpenclawConnected()) {
-                    console.error(`Failed to reconnect to Openclaw Gateway after ${maxRetries} attempts`);
+                // 等待一段时间后重试（指数退避）
+                if (this.running && !this.isOpenclawConnected()) {
+                    await sleep(retryInterval);
                 }
+            }
 
-            } catch (error) {
-                console.error('Error in Openclaw reconnection scheduler:', error.message);
-            } finally {
+            if (!this.running) {
+                console.log('[Bridge] Bridge stopped, exiting reconnection loop');
                 this.isReconnecting = false;
             }
-        }, 0);
+
+        } catch (error) {
+            console.error('[Bridge] Unexpected error in reconnection scheduler:', error.message);
+            this.isReconnecting = false;
+        }
     }
 }
 

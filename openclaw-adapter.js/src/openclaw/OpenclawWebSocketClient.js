@@ -26,6 +26,12 @@ export class OpenclawWebSocketClient {
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 10;
         
+        // 连接状态追踪
+        this._connectionStartTime = 0;
+        this._connectTimeout = null;
+        this._connectResolve = null;
+        this._connectReject = null;
+        
         // 绑定方法
         this.handleMessage = this.handleMessage.bind(this);
         this.handleClose = this.handleClose.bind(this);
@@ -36,28 +42,41 @@ export class OpenclawWebSocketClient {
      * 连接到 Openclaw Gateway
      */
     async connect() {
+        // 如果已有连接，先关闭
+        if (this.ws) {
+            this.closeConnection();
+        }
+        
         return new Promise((resolve, reject) => {
             try {
-                console.log(`Connecting to Openclaw Gateway: ${this.config.gateway.url}`);
+                console.log(`[Openclaw] Connecting to: ${this.config.gateway.url}`);
                 
                 this.ws = new WebSocket(this.config.gateway.url);
+                this._connectionStartTime = Date.now();
+                this._connectResolve = resolve;
+                this._connectReject = reject;
 
                 this.ws.on('open', () => {
-                    console.log('Connected to Openclaw Gateway');
-                    // 等待 connect.challenge 事件
-                    console.log('Waiting for connect.challenge event...');
+                    console.debug('[Openclaw] WebSocket opened, waiting for authentication challenge...');
                 });
 
                 this.ws.on('message', (data) => {
                     this.handleMessage(data.toString(), resolve, reject);
                 });
 
-                this.ws.on('close', this.handleClose);
-                this.ws.on('error', this.handleError);
+                this.ws.on('close', (code, reason) => {
+                    this.handleClose(code, reason);
+                });
+                
+                this.ws.on('error', (error) => {
+                    this.handleError(error);
+                });
 
-                // 设置连接超时
-                setTimeout(() => {
+                // 设置连接超时（10秒）
+                this._connectTimeout = setTimeout(() => {
                     if (!this.isAuthenticated) {
+                        console.warn('[Openclaw] Connection timeout (10s), closing socket');
+                        this.closeConnection();
                         reject(new Error('Connection timeout'));
                     }
                 }, 10000);
@@ -140,7 +159,7 @@ export class OpenclawWebSocketClient {
 
         try {
             this.send(JSON.stringify(request));
-            console.log('Sent connect request to Openclaw Gateway');
+            console.debug('[Openclaw] Sent authentication request');
 
             // 记录待处理的请求
             this.pendingRequests.set(requestId, {
@@ -150,7 +169,7 @@ export class OpenclawWebSocketClient {
                 timestamp: Date.now()
             });
         } catch (error) {
-            console.error('Failed to send connect request:', error.message);
+            console.error('[Openclaw] Failed to send connect request:', error.message);
             if (rejectConnect) rejectConnect(error);
         }
     }
@@ -427,16 +446,23 @@ export class OpenclawWebSocketClient {
                 if (this.ws && this.ws.readyState === WebSocket.OPEN && this.isAuthenticated) {
                     this.ws.ping();
                     this.lastHeartbeatTime = Date.now();
-                    console.debug('Sent ping to Openclaw Gateway');
+                    console.debug('[Openclaw] Ping sent');
+                } else if (!this.isAuthenticated) {
+                    // 未认证状态，停止心跳并触发重连
+                    console.debug('[Openclaw] Not authenticated, stopping heartbeat');
+                    this.stopHeartbeat();
+                    return;
                 }
                 // 清理超时的消息上下文
                 this.cleanupExpiredMessageContexts();
             } catch (error) {
-                console.error('Heartbeat error:', error.message);
+                console.error('[Openclaw] Heartbeat error:', error.message);
+                // 心跳失败时关闭连接，触发重连
+                this.closeConnection();
             }
         }, this.config.gateway.heartbeatInterval);
 
-        console.log(`Openclaw heartbeat started with interval: ${this.config.gateway.heartbeatInterval}ms`);
+        console.debug(`[Openclaw] Heartbeat started (${this.config.gateway.heartbeatInterval}ms)`);
     }
 
     /**
@@ -455,11 +481,37 @@ export class OpenclawWebSocketClient {
      * 处理连接关闭
      */
     handleClose(code, reason) {
-        console.warn(`Openclaw Gateway connection closed: code=${code}, reason=${reason}`);
+        const reasonStr = reason || 'No reason';
+        const wasAuthenticated = this.isAuthenticated;
+        
+        // 清理超时定时器
+        if (this._connectTimeout) {
+            clearTimeout(this._connectTimeout);
+            this._connectTimeout = null;
+        }
+        
+        // 清理 Promise 回调
+        this._connectResolve = null;
+        this._connectReject = null;
+        
+        // 只在非预期关闭时打印警告
+        if (code !== 1000 && code !== 1001) {
+            // 抑制频繁断开日志：如果连接从未成功认证且不是第一次连接，使用 debug 级别
+            if (!wasAuthenticated && this._connectionStartTime && 
+                Date.now() - this._connectionStartTime < 5000) {
+                console.debug(`[Openclaw] Connection closed (unauthenticated): code=${code}`);
+            } else {
+                console.warn(`[Openclaw] Connection closed: code=${code}, reason=${reasonStr}`);
+            }
+        } else {
+            console.debug(`[Openclaw] Connection closed normally: code=${code}`);
+        }
+        
         this.isAuthenticated = false;
         this.stopHeartbeat();
 
-        if (this.messageHandler) {
+        // 通知上层断开（但确保不会重复通知）
+        if (this.messageHandler && wasAuthenticated) {
             this.messageHandler.onDisconnected(code, reason);
         }
     }
@@ -468,7 +520,13 @@ export class OpenclawWebSocketClient {
      * 处理错误
      */
     handleError(error) {
-        console.error('Openclaw Gateway WebSocket error:', error.message);
+        // 抑制常见的连接错误日志，这些通常会在 handleClose 中处理
+        const errorMsg = error.message || 'Unknown error';
+        if (errorMsg.includes('ECONNREFUSED') || errorMsg.includes('ETIMEDOUT') || errorMsg.includes('ENOTFOUND')) {
+            console.debug('[Openclaw] Connection error (will retry):', errorMsg);
+        } else {
+            console.error('[Openclaw] WebSocket error:', errorMsg);
+        }
         if (this.messageHandler) {
             this.messageHandler.onError(error.message);
         }
@@ -481,19 +539,57 @@ export class OpenclawWebSocketClient {
         if (this.heartbeatTimer) {
             clearInterval(this.heartbeatTimer);
             this.heartbeatTimer = null;
-            console.log('Openclaw heartbeat stopped');
+            console.debug('[Openclaw] Heartbeat stopped');
         }
     }
 
     /**
      * 关闭连接
+     * 
+     * 安全关闭流程：
+     * 1. 停止心跳
+     * 2. 标记未认证（阻止后续消息处理）
+     * 3. 清理事件处理器（防止断开事件传播）
+     * 4. 关闭 WebSocket
+     * 5. 清理引用
      */
     closeConnection() {
         this.stopHeartbeat();
-        if (this.ws) {
-            this.ws.close();
-            this.ws = null;
+        this.isAuthenticated = false;
+        
+        // 清理超时定时器
+        if (this._connectTimeout) {
+            clearTimeout(this._connectTimeout);
+            this._connectTimeout = null;
         }
+        
+        if (this.ws) {
+            try {
+                // 先移除事件处理器，防止 close 事件触发重连
+                this.ws.removeAllListeners('open');
+                this.ws.removeAllListeners('message');
+                this.ws.removeAllListeners('close');
+                this.ws.removeAllListeners('error');
+                this.ws.removeAllListeners('ping');
+                this.ws.removeAllListeners('pong');
+                
+                // 只有在 OPEN 或 CONNECTING 状态才关闭
+                if (this.ws.readyState === WebSocket.OPEN) {
+                    this.ws.close(1000, 'Client closing');
+                } else if (this.ws.readyState === WebSocket.CONNECTING) {
+                    this.ws.terminate(); // 强制终止正在连接的 socket
+                }
+            } catch (e) {
+                // 忽略关闭时的错误
+                console.debug('[Openclaw] Error during connection close:', e.message);
+            } finally {
+                this.ws = null;
+            }
+        }
+        
+        // 清理 Promise 引用
+        this._connectResolve = null;
+        this._connectReject = null;
     }
 
     /**

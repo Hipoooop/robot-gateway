@@ -1,6 +1,6 @@
 {
   "name": "@wildfirechat/openclaw-adapter",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "野火IM与Openclaw Gateway的桥接适配器 (Node.js版)",
   "main": "src/index.js",
   "type": "module",
