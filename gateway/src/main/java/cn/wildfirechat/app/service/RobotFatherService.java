@@ -389,6 +389,80 @@ public class RobotFatherService {
     }
 
     /**
+     * 重置机器人密钥
+     * 生成新密钥并更新到 IM 服务器
+     * @param userId 用户ID
+     * @return 包含新密钥的机器人信息，失败返回 null
+     */
+    public RobotInfo resetRobotSecret(String userId) {
+        RobotInfo robotInfo = getUserCurrentRobot(userId);
+        if (robotInfo == null) {
+            LOG.warn("Cannot reset secret: user {} has no robot", userId);
+            return null;
+        }
+
+        try {
+            String robotId = robotInfo.getRobotId();
+            LOG.info("Resetting secret for robot: {}", robotId);
+
+            // 获取当前机器人详细信息
+            IMResult<OutputRobot> robotResult = UserAdmin.getRobotInfo(robotId);
+            if (robotResult == null || robotResult.getErrorCode() != ErrorCode.ERROR_CODE_SUCCESS) {
+                LOG.error("Failed to get robot info for reset: {}", robotId);
+                return null;
+            }
+
+            OutputRobot robot = robotResult.getResult();
+            if (robot == null) {
+                LOG.error("Robot info is null for: {}", robotId);
+                return null;
+            }
+
+            // 生成新密钥
+            String newSecret = generateSecret();
+
+            // 构建更新请求（使用 createRobot 来更新）
+            InputCreateRobot updateRobot = new InputCreateRobot();
+            updateRobot.setUserId(robot.getUserId());
+            updateRobot.setName(robot.getName());
+            updateRobot.setPassword(robot.getPassword());
+            updateRobot.setDisplayName(robot.getDisplayName());
+            updateRobot.setPortrait(robot.getPortrait());
+            updateRobot.setGender(robot.getGender());
+            updateRobot.setMobile(robot.getMobile());
+            updateRobot.setEmail(robot.getEmail());
+            updateRobot.setAddress(robot.getAddress());
+            updateRobot.setCompany(robot.getCompany());
+            updateRobot.setSocial(robot.getSocial());
+            updateRobot.setExtra(robot.getExtra());
+            updateRobot.setOwner(robot.getOwner());
+            updateRobot.setSecret(newSecret);  // 新密钥
+            updateRobot.setCallback(robot.getCallback());
+            updateRobot.setRobotExtra(robot.getRobotExtra());
+
+            // 调用 SDK 更新机器人
+            IMResult<OutputCreateRobot> result = UserAdmin.createRobot(updateRobot);
+            if (result != null && result.getErrorCode() == ErrorCode.ERROR_CODE_SUCCESS) {
+                OutputCreateRobot output = result.getResult();
+                if (output != null) {
+                    RobotInfo newInfo = new RobotInfo(output.getUserId(), output.getSecret());
+                    // 更新缓存
+                    userRobotCache.put(userId, newInfo);
+                    LOG.info("Robot secret reset successfully for: {}", robotId);
+                    return newInfo;
+                }
+            } else {
+                LOG.error("Failed to reset robot secret, error: {}", result != null ? result.getCode() : "null");
+            }
+
+        } catch (Exception e) {
+            LOG.error("Exception when resetting robot secret for user: {}", userId, e);
+        }
+
+        return null;
+    }
+
+    /**
      * 机器人信息类
      */
     public static class RobotInfo {

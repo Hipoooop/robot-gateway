@@ -66,6 +66,11 @@ public class RobotCommandHandler {
                 return handleDelete(userId);
             }
 
+            // Reset命令 - 重置机器人密钥
+            if (command.equals("/reset")) {
+                return handleReset(userId);
+            }
+
             // Update命令
             if (command.startsWith("/update ")) {
                 return handleUpdate(userId, command.substring(7).trim());
@@ -95,6 +100,8 @@ public class RobotCommandHandler {
                 "   显示您拥有的所有机器人\n\n" +
                 "📌 /delete - 删除机器人\n" +
                 "   删除当前机器人\n\n" +
+                "📌 /reset - 重置密钥\n" +
+                "   重置机器人的密钥（重置后旧密钥将失效）\n\n" +
                 "📌 /update name <名称> - 更新名称\n" +
                 "   修改机器人的显示名称\n\n" +
                 "📌 /update portrait <URL> - 更新头像\n" +
@@ -145,6 +152,7 @@ public class RobotCommandHandler {
                     return "🤖 机器人详细信息：\n" +
                             "━━━━━━━━━━━━━━━\n" +
                             "🆔 ID: " + robot.getUserId() + "\n" +
+                            "🔑 密钥: " + robotInfo.getRobotSecret() + "\n" +
                             "👤 名称: " + (robot.getDisplayName() != null ? robot.getDisplayName() : "未设置") + "\n" +
                             "🖼️ 头像: " + (robot.getPortrait() != null ? robot.getPortrait() : "未设置") + "\n" +
                             "👤 拥有者: " + robot.getOwner() + "\n" +
@@ -267,5 +275,26 @@ public class RobotCommandHandler {
             LOG.error("Failed to update robot for user: {}", userId, e);
             return "❌ 更新失败：" + e.getMessage();
         }
+    }
+
+    /**
+     * 重置机器人密钥
+     */
+    private String handleReset(String userId) {
+        RobotFatherService.RobotInfo robotInfo = robotFatherService.getUserCurrentRobot(userId);
+        if (robotInfo == null) {
+            return "💡 您还没有机器人\n\n发送 /create 创建一个";
+        }
+
+        RobotFatherService.RobotInfo newInfo = robotFatherService.resetRobotSecret(userId);
+        if (newInfo == null) {
+            return "❌ 重置密钥失败，请稍后重试";
+        }
+
+        return "✅ 密钥已重置\n" +
+                "━━━━━━━━━━━━━━━\n" +
+                "🆔 机器人ID: " + newInfo.getRobotId() + "\n" +
+                "🔑 新密钥: " + newInfo.getRobotSecret() + "\n\n" +
+                "⚠️ 注意：旧密钥已失效，请使用新密钥连接机器人";
     }
 }
