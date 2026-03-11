@@ -8,6 +8,7 @@ import cn.wildfirechat.sdk.model.IMResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
 import java.util.Scanner;
 
 /**
@@ -21,9 +22,9 @@ public class RobotClientDemo {
     private static RobotServiceClient robotClient;
 
     public static void main(String[] args) {
-        String gatewayUrl = "ws://localhost:8884/robot/gateway";
-        String robotId = "FireRobot";
-        String robotSecret = "123456";
+        String gatewayUrl = "ws://43.143.148.156:8884/robot/gateway";
+        String robotId = "robot_nl0qmws2k_1770036437732";
+        String robotSecret = "aa10e3cdda25401f8b3c956f8c607b85";
 
         if (args.length >= 3) {
             gatewayUrl = args[0];
@@ -140,6 +141,14 @@ public class RobotClientDemo {
                     getProfileDemo();
                     break;
 
+                case "upload":
+                    if (parts.length < 2) {
+                        LOG.warn("用法: upload <文件路径>");
+                    } else {
+                        uploadFileDemo(parts[1]);
+                    }
+                    break;
+
                 case "status":
                     printStatus();
                     break;
@@ -169,6 +178,7 @@ public class RobotClientDemo {
         LOG.info("  info <用户ID>               - 获取用户信息");
         LOG.info("  group                        - 创建群组");
         LOG.info("  profile                      - 获取机器人资料");
+        LOG.info("  upload <文件路径>           - 上传文件");
         LOG.info("  status                       - 查看连接状态");
         LOG.info("  help                         - 显示帮助");
         LOG.info("  quit/exit                    - 退出程序");
@@ -283,5 +293,38 @@ public class RobotClientDemo {
         LOG.info("  是否连接: {}", robotClient.isConnected());
         LOG.info("  是否鉴权: {}", robotClient.isAuthenticated());
         LOG.info("========================================");
+    }
+
+    /**
+     * 上传文件Demo
+     */
+    private static void uploadFileDemo(String filePath) {
+        LOG.info("上传文件: {}", filePath);
+
+        File file = new File(filePath);
+        if (!file.exists()) {
+            LOG.error("文件不存在: {}", filePath);
+            return;
+        }
+
+        if (!file.isFile()) {
+            LOG.error("路径不是文件: {}", filePath);
+            return;
+        }
+
+        LOG.info("文件大小: {} bytes", file.length());
+
+        try {
+            IMResult<String> result = robotClient.uploadFile(file);
+
+            if (result.getCode() == 0) {
+                LOG.info("上传成功!");
+                LOG.info("文件URL: {}", result.getResult());
+            } else {
+                LOG.error("上传失败: [{}] {}", result.getCode(), result.getMsg());
+            }
+        } catch (Exception e) {
+            LOG.error("上传文件异常: {}", e.getMessage(), e);
+        }
     }
 }

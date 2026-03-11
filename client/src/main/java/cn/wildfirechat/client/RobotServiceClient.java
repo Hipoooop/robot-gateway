@@ -10,9 +10,23 @@ import cn.wildfirechat.pojos.moments.MediaEntry;
 import cn.wildfirechat.pojos.moments.MomentProfilePojo;
 import cn.wildfirechat.sdk.model.IMResult;
 import com.google.gson.Gson;
+import org.apache.http.HttpResponse;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.client.methods.HttpPut;
+import org.apache.http.entity.ContentType;
+import org.apache.http.entity.FileEntity;
+import org.apache.http.entity.InputStreamEntity;
+import org.apache.http.entity.mime.MultipartEntityBuilder;
+import org.apache.http.entity.mime.content.FileBody;
+import org.apache.http.entity.mime.content.InputStreamBody;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClients;
+import org.apache.http.util.EntityUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -327,6 +341,371 @@ public class RobotServiceClient {
     public IMResult<Void> updateMomentsBlockList(List<String> addBlockUsers, List<String> removeBlockUsers) {
         return invoke("updateMomentsBlockList", Arrays.asList(addBlockUsers, removeBlockUsers),
                 new com.google.gson.reflect.TypeToken<IMResult<Void>>(){}.getType());
+    }
+
+    // ==================== 文件上传相关 ====================
+
+    /**
+     * 获取预签名上传URL
+     * @param fileName 文件名
+     * @param size 文件大小
+     * @param mediaType 媒体类型
+     * @return 预签名上传URL结果
+     */
+    public IMResult<OutputPresignedUploadUrl> getPresignedUploadUrl(String fileName, int size, String mediaType) {
+        return invoke("getPresignedUploadUrl", Arrays.asList(fileName, size, mediaType),
+                new com.google.gson.reflect.TypeToken<IMResult<OutputPresignedUploadUrl>>(){}.getType());
+    }
+
+    /**
+     * 上传文件
+     * 先获取预签名上传URL，然后直接上传到存储服务
+     * @param file 要上传的文件
+     * @return 上传后的下载URL
+     */
+    public IMResult<String> uploadFile(File file) {
+        return uploadFile(file, 4, null);
+    }
+
+    /**
+     * 上传文件
+     * 先获取预签名上传URL，然后直接上传到存储服务
+     * @param file 要上传的文件
+     * @param type 文件类型
+     * @param mediaType 媒体类型
+     * @return 上传后的下载URL
+     */
+    public IMResult<String> uploadFile(File file, int type, String mediaType) {
+        if (file == null || !file.exists()) {
+            IMResult<String> result = new IMResult<>();
+            result.setCode(-1);
+            result.setMsg("文件不能为空或不存在");
+            return result;
+        }
+
+        // 如果mediaType为空，根据文件名推断
+        if (mediaType == null || mediaType.isEmpty()) {
+            mediaType = getContentTypeByFileName(file.getName());
+        }
+
+        try {
+            return doUploadFile(file.getName(), type, mediaType, file, null);
+        } catch (Exception e) {
+            LOG.error("上传文件失败: {}", e.getMessage(), e);
+            IMResult<String> result = new IMResult<>();
+            result.setCode(-1);
+            result.setMsg("上传文件失败: " + e.getMessage());
+            return result;
+        }
+    }
+
+    /**
+     * 上传文件
+     * 先获取预签名上传URL，然后直接上传到存储服务
+     * @param inputStream 文件输入流
+     * @param fileName 文件名
+     * @return 上传后的下载URL
+     */
+    public IMResult<String> uploadFile(InputStream inputStream, String fileName) {
+        return uploadFile(inputStream, fileName, 4, null);
+    }
+
+    /**
+     * 上传文件
+     * 先获取预签名上传URL，然后直接上传到存储服务
+     * @param inputStream 文件输入流
+     * @param fileName 文件名
+     * @param type 文件类型
+     * @param mediaType 媒体类型
+     * @return 上传后的下载URL
+     */
+    public IMResult<String> uploadFile(InputStream inputStream, String fileName, int type, String mediaType) {
+        if (inputStream == null) {
+            IMResult<String> result = new IMResult<>();
+            result.setCode(-1);
+            result.setMsg("输入流不能为空");
+            return result;
+        }
+
+        // 如果mediaType为空，根据文件名推断
+        if (mediaType == null || mediaType.isEmpty()) {
+            mediaType = getContentTypeByFileName(fileName);
+        }
+
+        try {
+            return doUploadFile(fileName, type, mediaType, null, inputStream);
+        } catch (Exception e) {
+            LOG.error("上传文件失败: {}", e.getMessage(), e);
+            IMResult<String> result = new IMResult<>();
+            result.setCode(-1);
+            result.setMsg("上传文件失败: " + e.getMessage());
+            return result;
+        }
+    }
+
+    /**
+     * 执行文件上传
+     * 根据存储类型区分：1=七牛云，其他=通用S3/OSS
+     * @param fileName 文件名
+     * @param type 文件类型
+     * @param mediaType 媒体类型
+     * @param file 文件对象（与inputStream二选一）
+     * @param inputStream 输入流（与file二选一）
+     * @return 上传后的下载URL
+     * @throws Exception 上传过程中的异常
+     */
+    private IMResult<String> doUploadFile(String fileName, int type, String mediaType, File file, InputStream inputStream) throws Exception {
+        // 获取文件大小
+        long fileSize;
+        if (file != null) {
+            fileSize = file.length();
+        } else {
+            fileSize = inputStream.available();
+        }
+
+        // 1. 获取预签名上传URL
+        IMResult<OutputPresignedUploadUrl> presignedResult = getPresignedUploadUrl(fileName, (int) fileSize, mediaType);
+        if (presignedResult.getErrorCode() != cn.wildfirechat.common.ErrorCode.ERROR_CODE_SUCCESS) {
+            IMResult<String> result = new IMResult<>();
+            result.setCode(presignedResult.getCode());
+            result.setMsg(presignedResult.getMsg());
+            return result;
+        }
+
+        OutputPresignedUploadUrl presignedUrl = presignedResult.getResult();
+        if (presignedUrl == null || presignedUrl.uploadUrl == null || presignedUrl.uploadUrl.isEmpty()) {
+            IMResult<String> result = new IMResult<>();
+            result.setCode(-1);
+            result.setMsg("获取上传URL失败");
+            return result;
+        }
+
+        // 2. 根据存储类型选择上传方式
+        if (presignedUrl.type == 1) {
+            // 七牛云上传
+            return uploadToQiniu(presignedUrl, file, inputStream, fileName, mediaType);
+        } else {
+            // 其他存储（S3/OSS等）
+            return uploadToOther(presignedUrl, file, inputStream, mediaType);
+        }
+    }
+
+    /**
+     * 上传到七牛云
+     * 使用multipart/form-data格式，需要解析URL获取token和key
+     */
+    private IMResult<String> uploadToQiniu(OutputPresignedUploadUrl presignedUrl, File file, InputStream inputStream, String fileName, String mediaType) throws Exception {
+        String uploadUrl = presignedUrl.uploadUrl;
+
+        // 解析URL：格式为 "http://host?token?key"
+        int firstQuestion = uploadUrl.indexOf('?');
+        int secondQuestion = uploadUrl.indexOf('?', firstQuestion + 1);
+
+        if (firstQuestion == -1 || secondQuestion == -1) {
+            IMResult<String> result = new IMResult<>();
+            result.setCode(-1);
+            result.setMsg("七牛云上传地址格式错误");
+            return result;
+        }
+
+        String serverUrl = uploadUrl.substring(0, firstQuestion);
+        String token = uploadUrl.substring(firstQuestion + 1, secondQuestion);
+        String key = uploadUrl.substring(secondQuestion + 1);
+
+        HttpPost httpPost = new HttpPost(serverUrl);
+        CloseableHttpClient httpClient = null;
+        CloseableHttpResponse response = null;
+
+        try {
+            // 构建multipart请求体
+            MultipartEntityBuilder builder = MultipartEntityBuilder.create();
+            builder.addTextBody("token", token);
+            builder.addTextBody("key", key);
+
+            if (file != null) {
+                builder.addPart("file", new FileBody(file, ContentType.create(mediaType), fileName));
+            } else if (inputStream != null) {
+                builder.addPart("file", new InputStreamBody(inputStream, ContentType.create(mediaType), fileName));
+            }
+
+            httpPost.setEntity(builder.build());
+
+            httpClient = HttpClients.createDefault();
+            response = httpClient.execute(httpPost);
+            int statusCode = response.getStatusLine().getStatusCode();
+
+            // 消耗响应实体
+            EntityUtils.consumeQuietly(response.getEntity());
+
+            if (statusCode == 200 || statusCode == 201) {
+                IMResult<String> result = new IMResult<>();
+                result.setCode(0);
+                result.setResult(presignedUrl.downloadUrl);
+                return result;
+            } else {
+                IMResult<String> result = new IMResult<>();
+                result.setCode(-1);
+                result.setMsg("文件上传到七牛云失败，HTTP状态码: " + statusCode);
+                return result;
+            }
+        } finally {
+            if (response != null) {
+                try {
+                    response.close();
+                } catch (IOException ignored) {}
+            }
+            if (httpClient != null) {
+                try {
+                    httpClient.close();
+                } catch (IOException ignored) {}
+            }
+            httpPost.releaseConnection();
+        }
+    }
+
+    /**
+     * 上传到通用存储（S3/OSS等）
+     * 使用HTTP PUT直接上传
+     */
+    private IMResult<String> uploadToOther(OutputPresignedUploadUrl presignedUrl, File file, InputStream inputStream, String mediaType) throws Exception {
+        CloseableHttpClient httpClient = null;
+        CloseableHttpResponse response = null;
+
+        try {
+            httpClient = HttpClients.createDefault();
+
+            // 先尝试主上传URL
+            HttpPut httpPut = new HttpPut(presignedUrl.uploadUrl);
+            httpPut.setHeader("Content-Type", mediaType);
+
+            if (file != null) {
+                FileEntity entity = new FileEntity(file);
+                entity.setContentType(mediaType);
+                httpPut.setEntity(entity);
+            } else if (inputStream != null) {
+                InputStreamEntity entity = new InputStreamEntity(inputStream);
+                entity.setContentType(mediaType);
+                httpPut.setEntity(entity);
+            }
+
+            response = httpClient.execute(httpPut);
+            int statusCode = response.getStatusLine().getStatusCode();
+
+            if (statusCode >= 200 && statusCode < 300) {
+                EntityUtils.consumeQuietly(response.getEntity());
+                IMResult<String> result = new IMResult<>();
+                result.setCode(0);
+                result.setResult(presignedUrl.downloadUrl);
+                return result;
+            }
+
+            EntityUtils.consumeQuietly(response.getEntity());
+            response.close();
+
+            // 主URL失败，尝试备用URL
+            if (presignedUrl.backupUploadUrl != null && !presignedUrl.backupUploadUrl.isEmpty()) {
+                httpPut = new HttpPut(presignedUrl.backupUploadUrl);
+                httpPut.setHeader("Content-Type", mediaType);
+
+                if (file != null) {
+                    FileEntity entity = new FileEntity(file);
+                    entity.setContentType(mediaType);
+                    httpPut.setEntity(entity);
+                } else {
+                    // 输入流无法重用，返回错误
+                    IMResult<String> result = new IMResult<>();
+                    result.setCode(-1);
+                    result.setMsg("主上传URL失败，无法使用备用URL（输入流无法重用）");
+                    return result;
+                }
+
+                response = httpClient.execute(httpPut);
+                statusCode = response.getStatusLine().getStatusCode();
+                EntityUtils.consumeQuietly(response.getEntity());
+
+                if (statusCode >= 200 && statusCode < 300) {
+                    IMResult<String> result = new IMResult<>();
+                    result.setCode(0);
+                    result.setResult(presignedUrl.downloadUrl);
+                    return result;
+                }
+            }
+
+            IMResult<String> result = new IMResult<>();
+            result.setCode(-1);
+            result.setMsg("上传文件失败，HTTP状态码: " + statusCode);
+            return result;
+
+        } finally {
+            if (response != null) {
+                try {
+                    response.close();
+                } catch (IOException ignored) {}
+            }
+            if (httpClient != null) {
+                try {
+                    httpClient.close();
+                } catch (IOException ignored) {}
+            }
+        }
+    }
+
+    /**
+     * 根据文件名获取Content-Type
+     * @param fileName 文件名
+     * @return Content-Type
+     */
+    private String getContentTypeByFileName(String fileName) {
+        if (fileName == null || fileName.isEmpty()) {
+            return "application/octet-stream";
+        }
+
+        String lowerCaseName = fileName.toLowerCase();
+        if (lowerCaseName.endsWith(".jpg") || lowerCaseName.endsWith(".jpeg")) {
+            return "image/jpeg";
+        } else if (lowerCaseName.endsWith(".png")) {
+            return "image/png";
+        } else if (lowerCaseName.endsWith(".gif")) {
+            return "image/gif";
+        } else if (lowerCaseName.endsWith(".bmp")) {
+            return "image/bmp";
+        } else if (lowerCaseName.endsWith(".webp")) {
+            return "image/webp";
+        } else if (lowerCaseName.endsWith(".mp4")) {
+            return "video/mp4";
+        } else if (lowerCaseName.endsWith(".mov")) {
+            return "video/quicktime";
+        } else if (lowerCaseName.endsWith(".avi")) {
+            return "video/x-msvideo";
+        } else if (lowerCaseName.endsWith(".mp3")) {
+            return "audio/mpeg";
+        } else if (lowerCaseName.endsWith(".wav")) {
+            return "audio/wav";
+        } else if (lowerCaseName.endsWith(".pdf")) {
+            return "application/pdf";
+        } else if (lowerCaseName.endsWith(".doc")) {
+            return "application/msword";
+        } else if (lowerCaseName.endsWith(".docx")) {
+            return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        } else if (lowerCaseName.endsWith(".xls")) {
+            return "application/vnd.ms-excel";
+        } else if (lowerCaseName.endsWith(".xlsx")) {
+            return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+        } else if (lowerCaseName.endsWith(".ppt")) {
+            return "application/vnd.ms-powerpoint";
+        } else if (lowerCaseName.endsWith(".pptx")) {
+            return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+        } else if (lowerCaseName.endsWith(".txt")) {
+            return "text/plain";
+        } else if (lowerCaseName.endsWith(".zip")) {
+            return "application/zip";
+        } else if (lowerCaseName.endsWith(".tar")) {
+            return "application/x-tar";
+        } else if (lowerCaseName.endsWith(".gz")) {
+            return "application/gzip";
+        } else {
+            return "application/octet-stream";
+        }
     }
 
     public void close() {
