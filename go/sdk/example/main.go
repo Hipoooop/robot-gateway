@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/wildfirechat/robot-gateway-sdk/client"
@@ -60,7 +61,7 @@ func main() {
 	}
 
 	fmt.Println("Connected and authenticated!")
-	fmt.Println("Commands: send <userId> <text>, info <userId>, profile, help, quit")
+	fmt.Println("Commands: send <userId> <text>, info <userId>, profile, upload <filePath> [userId], help, quit")
 	fmt.Print("> ")
 
 	// Interactive command loop
@@ -140,14 +141,90 @@ func main() {
 			fmt.Printf("Authenticated: %v\n", robotClient.IsAuthenticated())
 			fmt.Printf("Running: %v\n", robotClient.IsRunning())
 
+		case "upload":
+			// upload <filePath> [userId]
+			if len(parts) < 2 {
+				fmt.Println("Usage: upload <filePath> [userId]")
+				fmt.Println("Example: upload ./test.jpg")
+				fmt.Println("Example: upload ./test.jpg user1")
+				break
+			}
+			filePath := parts[1]
+			var targetUserID string
+			if len(parts) >= 3 {
+				targetUserID = parts[2]
+			}
+
+			// Read file
+			fileData, err := os.ReadFile(filePath)
+			if err != nil {
+				fmt.Printf("Error reading file: %v\n", err)
+				break
+			}
+
+			fileName := filepath.Base(filePath)
+			fmt.Printf("Uploading file: %s (%d bytes)\n", fileName, len(fileData))
+
+			// Upload file
+			result, err := robotClient.UploadFile(fileData, fileName, 4, "")
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				break
+			}
+
+			if result.IsSuccess() {
+				fmt.Printf("Upload successful!\n")
+				fmt.Printf("Download URL: %s\n", result.Result)
+
+				// Send message if userId provided
+				if targetUserID != "" {
+					ext := strings.ToLower(filepath.Ext(fileName))
+					isImage := ext == ".jpg" || ext == ".jpeg" || ext == ".png" || 
+					           ext == ".gif" || ext == ".bmp" || ext == ".webp"
+
+					conv := &protocol.Conversation{
+						Type:   0, // Single chat
+						Target: targetUserID,
+						Line:   0,
+					}
+
+					contentType := 5 // File
+					contentDesc := "[File] " + fileName
+					if isImage {
+						contentType = 3 // Image
+						contentDesc = "[Image]"
+					}
+
+					payload := &protocol.MessagePayload{
+						Type:              contentType,
+						SearchableContent: contentDesc,
+						RemoteMediaURL:    result.Result,
+					}
+
+					sendResult, err := robotClient.SendMessage(conv, payload)
+					if err != nil {
+						fmt.Printf("Error sending message: %v\n", err)
+					} else if sendResult.IsSuccess() {
+						fmt.Printf("%s message sent to %s\n", 
+							map[bool]string{true: "Image", false: "File"}[isImage], 
+							targetUserID)
+					} else {
+						fmt.Printf("Failed to send message: %s\n", sendResult.Msg)
+					}
+				}
+			} else {
+				fmt.Printf("Upload failed: %s (code: %d)\n", result.Msg, result.Code)
+			}
+
 		case "help":
 			fmt.Println("Commands:")
-			fmt.Println("  send <userId> <text>  - Send a message")
-			fmt.Println("  info <userId>         - Get user info")
-			fmt.Println("  profile               - Get robot profile")
-			fmt.Println("  status                - Get connection status")
-			fmt.Println("  help                  - Show this help")
-			fmt.Println("  quit                  - Exit")
+			fmt.Println("  send <userId> <text>          - Send a message")
+			fmt.Println("  info <userId>                 - Get user info")
+			fmt.Println("  profile                       - Get robot profile")
+			fmt.Println("  status                        - Get connection status")
+			fmt.Println("  upload <filePath> [userId]    - Upload file (Qiniu/S3/OSS)")
+			fmt.Println("  help                          - Show this help")
+			fmt.Println("  quit                          - Exit")
 
 		case "quit", "exit":
 			fmt.Println("Goodbye!")

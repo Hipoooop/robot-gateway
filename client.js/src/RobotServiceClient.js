@@ -1,5 +1,6 @@
 import { ConnectionManager } from './ConnectionManager.js';
 import { IMResult } from '@wildfirechat/server-sdk';
+import { RequestMessage } from './protocol/RequestMessage.js';
 
 /**
  * RobotService 客户端
@@ -371,5 +372,277 @@ export class RobotServiceClient {
      */
     async getUserConversations(userId, line = 0) {
         return this.invoke('getUserConversations', [userId, line]);
+    }
+
+    // ==================== 文件上传相关 API ====================
+
+    /**
+     * 获取预签名上传URL
+     * @param {string} fileName - 文件名
+     * @param {number} size - 文件大小
+     * @param {string} mediaType - 媒体类型
+     * @returns {Promise<IMResult<OutputPresignedUploadUrl>>}
+     */
+    async getPresignedUploadUrl(fileName, size, mediaType) {
+        return this.invoke('getPresignedUploadUrl', [fileName, size, mediaType]);
+    }
+
+    /**
+     * 上传文件（支持七牛云和其他对象存储）
+     * @param {Buffer|Blob|File} fileData - 文件数据
+     * @param {string} fileName - 文件名
+     * @param {number} type - 文件类型，默认4
+     * @param {string} mediaType - 媒体类型，自动根据文件名推断
+     * @returns {Promise<IMResult<string>>} - 上传后的下载URL
+     */
+    async uploadFile(fileData, fileName, type = 4, mediaType = null) {
+        // 如果mediaType为空，根据文件名推断
+        if (!mediaType) {
+            mediaType = this.getContentTypeByFileName(fileName);
+        }
+
+        // 获取文件大小
+        let fileSize;
+        if (fileData instanceof Buffer) {
+            fileSize = fileData.length;
+        } else if (fileData instanceof Blob || fileData instanceof File) {
+            fileSize = fileData.size;
+        } else if (typeof fileData === 'string') {
+            fileSize = Buffer.byteLength(fileData, 'utf8');
+        } else {
+            return new IMResult(-1, '不支持的文件数据类型', null);
+        }
+
+        // 1. 获取预签名上传URL
+        const presignedResult = await this.getPresignedUploadUrl(fileName, fileSize, mediaType);
+        if (!presignedResult.isSuccess()) {
+            return new IMResult(presignedResult.code, presignedResult.msg, null);
+        }
+
+        const presignedUrl = presignedResult.result;
+        if (!presignedUrl || !presignedUrl.uploadUrl) {
+            return new IMResult(-1, '获取上传URL失败', null);
+        }
+
+        // 2. 根据存储类型选择上传方式
+        if (presignedUrl.type === 1) {
+            // 七牛云上传
+            return this.uploadToQiniu(presignedUrl, fileData, fileName, mediaType);
+        } else {
+            // 其他存储（S3/OSS等）
+            return this.uploadToOther(presignedUrl, fileData, mediaType);
+        }
+    }
+
+    /**
+     * 上传到七牛云
+     * 使用multipart/form-data格式
+     * @param {OutputPresignedUploadUrl} presignedUrl - 预签名URL信息
+     * @param {Buffer|Blob|File} fileData - 文件数据
+     * @param {string} fileName - 文件名
+     * @param {string} mediaType - 媒体类型
+     * @returns {Promise<IMResult<string>>}
+     */
+    async uploadToQiniu(presignedUrl, fileData, fileName, mediaType) {
+        const uploadUrl = presignedUrl.uploadUrl;
+
+        // 解析URL：格式为 "http://host?token?key"
+        const firstQuestion = uploadUrl.indexOf('?');
+        const secondQuestion = uploadUrl.indexOf('?', firstQuestion + 1);
+
+        if (firstQuestion === -1 || secondQuestion === -1) {
+            return new IMResult(-1, '七牛云上传地址格式错误', null);
+        }
+
+        const serverUrl = uploadUrl.substring(0, firstQuestion);
+        const token = uploadUrl.substring(firstQuestion + 1, secondQuestion);
+        const key = uploadUrl.substring(secondQuestion + 1);
+
+        try {
+            // 构建FormData
+            const formData = new FormData();
+            formData.append('token', token);
+            formData.append('key', key);
+            
+            // 处理文件数据
+            let blob;
+            if (fileData instanceof Buffer) {
+                blob = new Blob([fileData], { type: mediaType });
+            } else if (fileData instanceof Blob || fileData instanceof File) {
+                blob = fileData;
+            } else {
+                blob = new Blob([fileData], { type: mediaType });
+            }
+            formData.append('file', blob, fileName);
+
+            // Node.js 环境使用 node-fetch 或 axios
+            let response;
+            if (typeof fetch !== 'undefined') {
+                // 浏览器环境
+                response = await fetch(serverUrl, {
+                    method: 'POST',
+                    body: formData
+                });
+            } else {
+                // Node.js 环境，需要动态导入 node-fetch
+                const { default: fetch } = await import('node-fetch');
+                const FormData = (await import('form-data')).default;
+                const nodeFormData = new FormData();
+                nodeFormData.append('token', token);
+                nodeFormData.append('key', key);
+                nodeFormData.append('file', fileData, { filename: fileName, contentType: mediaType });
+                
+                response = await fetch(serverUrl, {
+                    method: 'POST',
+                    body: nodeFormData
+                });
+            }
+
+            if (response.ok || response.status === 200) {
+                return new IMResult(0, 'success', presignedUrl.downloadUrl);
+            } else {
+                return new IMResult(-1, `文件上传到七牛云失败，HTTP状态码: ${response.status}`, null);
+            }
+        } catch (error) {
+            return new IMResult(-1, `上传文件失败: ${error.message}`, null);
+        }
+    }
+
+    /**
+     * 上传到通用存储（S3/OSS等）
+     * 使用HTTP PUT直接上传
+     * @param {OutputPresignedUploadUrl} presignedUrl - 预签名URL信息
+     * @param {Buffer|Blob|File} fileData - 文件数据
+     * @param {string} mediaType - 媒体类型
+     * @returns {Promise<IMResult<string>>}
+     */
+    async uploadToOther(presignedUrl, fileData, mediaType) {
+        try {
+            // 准备请求体
+            let body;
+            if (fileData instanceof Buffer) {
+                body = fileData;
+            } else if (fileData instanceof Blob || fileData instanceof File) {
+                body = fileData;
+            } else {
+                body = Buffer.from(fileData);
+            }
+
+            // 使用主上传URL
+            let response;
+            if (typeof fetch !== 'undefined') {
+                response = await fetch(presignedUrl.uploadUrl, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': mediaType
+                    },
+                    body: body
+                });
+            } else {
+                const { default: fetch } = await import('node-fetch');
+                response = await fetch(presignedUrl.uploadUrl, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': mediaType
+                    },
+                    body: body
+                });
+            }
+
+            if (response.ok || (response.status >= 200 && response.status < 300)) {
+                return new IMResult(0, 'success', presignedUrl.downloadUrl);
+            }
+
+            // 主URL失败，尝试备用URL
+            if (presignedUrl.backupUploadUrl) {
+                if (typeof fetch !== 'undefined') {
+                    response = await fetch(presignedUrl.backupUploadUrl, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': mediaType
+                        },
+                        body: body
+                    });
+                } else {
+                    const { default: fetch } = await import('node-fetch');
+                    response = await fetch(presignedUrl.backupUploadUrl, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': mediaType
+                        },
+                        body: body
+                    });
+                }
+
+                if (response.ok || (response.status >= 200 && response.status < 300)) {
+                    return new IMResult(0, 'success', presignedUrl.downloadUrl);
+                }
+            }
+
+            return new IMResult(-1, `上传文件失败，HTTP状态码: ${response.status}`, null);
+        } catch (error) {
+            return new IMResult(-1, `上传文件失败: ${error.message}`, null);
+        }
+    }
+
+    /**
+     * 根据文件名获取Content-Type
+     * @param {string} fileName - 文件名
+     * @returns {string} - Content-Type
+     */
+    getContentTypeByFileName(fileName) {
+        if (!fileName) {
+            return 'application/octet-stream';
+        }
+
+        const lowerCaseName = fileName.toLowerCase();
+        const mimeTypes = {
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.png': 'image/png',
+            '.gif': 'image/gif',
+            '.bmp': 'image/bmp',
+            '.webp': 'image/webp',
+            '.mp4': 'video/mp4',
+            '.mov': 'video/quicktime',
+            '.avi': 'video/x-msvideo',
+            '.mp3': 'audio/mpeg',
+            '.wav': 'audio/wav',
+            '.pdf': 'application/pdf',
+            '.doc': 'application/msword',
+            '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            '.xls': 'application/vnd.ms-excel',
+            '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            '.ppt': 'application/vnd.ms-powerpoint',
+            '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            '.txt': 'text/plain',
+            '.zip': 'application/zip',
+            '.tar': 'application/x-tar',
+            '.gz': 'application/gzip'
+        };
+
+        for (const [ext, mimeType] of Object.entries(mimeTypes)) {
+            if (lowerCaseName.endsWith(ext)) {
+                return mimeType;
+            }
+        }
+
+        return 'application/octet-stream';
+    }
+}
+
+/**
+ * OutputPresignedUploadUrl 预签名上传URL结果
+ */
+export class OutputPresignedUploadUrl {
+    constructor(data = {}) {
+        /** 存储类型：1=七牛云，其他=通用S3/OSS */
+        this.type = data.type || 0;
+        /** 上传URL */
+        this.uploadUrl = data.uploadUrl || '';
+        /** 备用上传URL */
+        this.backupUploadUrl = data.backupUploadUrl || '';
+        /** 下载URL */
+        this.downloadUrl = data.downloadUrl || '';
     }
 }

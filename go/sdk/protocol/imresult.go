@@ -124,3 +124,11 @@ type MediaEntry struct {
 	Type int    `json:"type"` // 1=image, 2=video
 	URL  string `json:"url"`
 }
+
+// OutputPresignedUploadUrl represents the result of getting a presigned upload URL.
+type OutputPresignedUploadUrl struct {
+	Type             int    `json:"type"`             // 1=Qiniu, others=S3/OSS
+	UploadURL        string `json:"uploadUrl"`        // Primary upload URL
+	BackupUploadURL  string `json:"backupUploadUrl"`  // Backup upload URL (for S3/OSS)
+	DownloadURL      string `json:"downloadUrl"`      // Download URL after upload
+}

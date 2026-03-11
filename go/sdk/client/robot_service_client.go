@@ -1,8 +1,11 @@
 package client
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"mime/multipart"
+	"net/http"
 	"time"
 
 	"github.com/wildfirechat/robot-gateway-sdk/protocol"
@@ -386,4 +389,257 @@ func (c *RobotServiceClient) UpdateMomentsBlackList(addBlackUsers, removeBlackUs
 func (c *RobotServiceClient) UpdateMomentsBlockList(addBlockUsers, removeBlockUsers []string) (*protocol.IMResult[struct{}], error) {
 	params := []interface{}{addBlockUsers, removeBlockUsers}
 	return invoke[struct{}](c, "updateMomentsBlockList", params)
+}
+
+// ==================== File Upload Related ====================
+
+// GetPresignedUploadUrl gets a presigned upload URL.
+func (c *RobotServiceClient) GetPresignedUploadUrl(fileName string, size int, mediaType string) (*protocol.IMResult[protocol.OutputPresignedUploadUrl], error) {
+	params := []interface{}{fileName, size, mediaType}
+	return invoke[protocol.OutputPresignedUploadUrl](c, "getPresignedUploadUrl", params)
+}
+
+// UploadFile uploads a file (supports Qiniu and other object storage).
+// It first gets a presigned upload URL, then uploads directly to the storage service.
+func (c *RobotServiceClient) UploadFile(fileData []byte, fileName string, fileType int, mediaType string) (*protocol.IMResult[string], error) {
+	if len(fileData) == 0 {
+		return &protocol.IMResult[string]{
+			Code: -1,
+			Msg:  "File data is empty",
+		}, nil
+	}
+
+	// Infer media type from file name if not provided
+	if mediaType == "" {
+		mediaType = getContentTypeByFileName(fileName)
+	}
+
+	// 1. Get presigned upload URL
+	presignedResult, err := c.GetPresignedUploadUrl(fileName, len(fileData), mediaType)
+	if err != nil {
+		return &protocol.IMResult[string]{
+			Code: -1,
+			Msg:  fmt.Sprintf("Failed to get presigned URL: %v", err),
+		}, nil
+	}
+
+	if !presignedResult.IsSuccess() {
+		return &protocol.IMResult[string]{
+			Code: presignedResult.Code,
+			Msg:  presignedResult.Msg,
+		}, nil
+	}
+
+	presignedUrl := presignedResult.Result
+	if presignedUrl.UploadURL == "" {
+		return &protocol.IMResult[string]{
+			Code: -1,
+			Msg:  "Upload URL is empty",
+		}, nil
+	}
+
+	// 2. Upload based on storage type
+	if presignedUrl.Type == 1 {
+		// Qiniu upload
+		return c.uploadToQiniu(&presignedUrl, fileData, fileName, mediaType)
+	}
+	// Other storage (S3/OSS)
+	return c.uploadToOther(&presignedUrl, fileData, mediaType)
+}
+
+// uploadToQiniu uploads file to Qiniu using multipart/form-data.
+func (c *RobotServiceClient) uploadToQiniu(presignedURL *protocol.OutputPresignedUploadUrl, fileData []byte, fileName, mediaType string) (*protocol.IMResult[string], error) {
+	uploadURL := presignedURL.UploadURL
+
+	// Parse URL: format is "http://host?token?key"
+	firstQuestion := -1
+	secondQuestion := -1
+	for i, ch := range uploadURL {
+		if ch == '?' {
+			if firstQuestion == -1 {
+				firstQuestion = i
+			} else if secondQuestion == -1 {
+				secondQuestion = i
+				break
+			}
+		}
+	}
+
+	if firstQuestion == -1 || secondQuestion == -1 {
+		return &protocol.IMResult[string]{
+			Code: -1,
+			Msg:  "Invalid Qiniu upload URL format",
+		}, nil
+	}
+
+	serverURL := uploadURL[:firstQuestion]
+	token := uploadURL[firstQuestion+1 : secondQuestion]
+	key := uploadURL[secondQuestion+1:]
+
+	// Build multipart form data
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	// Add token and key
+	writer.WriteField("token", token)
+	writer.WriteField("key", key)
+
+	// Add file
+	part, err := writer.CreateFormFile("file", fileName)
+	if err != nil {
+		return &protocol.IMResult[string]{
+			Code: -1,
+			Msg:  fmt.Sprintf("Failed to create form file: %v", err),
+		}, nil
+	}
+	part.Write(fileData)
+	writer.Close()
+
+	// Create request
+	req, err := http.NewRequest("POST", serverURL, body)
+	if err != nil {
+		return &protocol.IMResult[string]{
+			Code: -1,
+			Msg:  fmt.Sprintf("Failed to create request: %v", err),
+		}, nil
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	// Execute request
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return &protocol.IMResult[string]{
+			Code: -1,
+			Msg:  fmt.Sprintf("Failed to upload to Qiniu: %v", err),
+		}, nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 200 || resp.StatusCode == 201 {
+		return &protocol.IMResult[string]{
+			Code:   0,
+			Msg:    "success",
+			Result: presignedURL.DownloadURL,
+		}, nil
+	}
+
+	return &protocol.IMResult[string]{
+		Code: -1,
+		Msg:  fmt.Sprintf("Upload to Qiniu failed, HTTP status: %d", resp.StatusCode),
+	}, nil
+}
+
+// uploadToOther uploads file to generic storage (S3/OSS) using HTTP PUT.
+func (c *RobotServiceClient) uploadToOther(presignedURL *protocol.OutputPresignedUploadUrl, fileData []byte, mediaType string) (*protocol.IMResult[string], error) {
+	// Try primary URL first
+	req, err := http.NewRequest("PUT", presignedURL.UploadURL, bytes.NewReader(fileData))
+	if err != nil {
+		return &protocol.IMResult[string]{
+			Code: -1,
+			Msg:  fmt.Sprintf("Failed to create request: %v", err),
+		}, nil
+	}
+	req.Header.Set("Content-Type", mediaType)
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return &protocol.IMResult[string]{
+			Code: -1,
+			Msg:  fmt.Sprintf("Failed to upload: %v", err),
+		}, nil
+	}
+	resp.Body.Close()
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return &protocol.IMResult[string]{
+			Code:   0,
+			Msg:    "success",
+			Result: presignedURL.DownloadURL,
+		}, nil
+	}
+
+	// Primary URL failed, try backup URL if available
+	if presignedURL.BackupUploadURL != "" {
+		req, err = http.NewRequest("PUT", presignedURL.BackupUploadURL, bytes.NewReader(fileData))
+		if err != nil {
+			return &protocol.IMResult[string]{
+				Code: -1,
+				Msg:  fmt.Sprintf("Failed to create backup request: %v", err),
+			}, nil
+		}
+		req.Header.Set("Content-Type", mediaType)
+
+		resp, err = client.Do(req)
+		if err != nil {
+			return &protocol.IMResult[string]{
+				Code: -1,
+				Msg:  fmt.Sprintf("Failed to upload to backup URL: %v", err),
+			}, nil
+		}
+		resp.Body.Close()
+
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			return &protocol.IMResult[string]{
+				Code:   0,
+				Msg:    "success",
+				Result: presignedURL.DownloadURL,
+			}, nil
+		}
+	}
+
+	return &protocol.IMResult[string]{
+		Code: -1,
+		Msg:  fmt.Sprintf("Upload failed, HTTP status: %d", resp.StatusCode),
+	}, nil
+}
+
+// getContentTypeByFileName returns the content type based on file extension.
+func getContentTypeByFileName(fileName string) string {
+	if fileName == "" {
+		return "application/octet-stream"
+	}
+
+	lowerName := ""
+	for _, ch := range fileName {
+		if ch >= 'A' && ch <= 'Z' {
+			lowerName += string(ch + 32)
+		} else {
+			lowerName += string(ch)
+		}
+	}
+
+	extToMime := map[string]string{
+		".jpg":  "image/jpeg",
+		".jpeg": "image/jpeg",
+		".png":  "image/png",
+		".gif":  "image/gif",
+		".bmp":  "image/bmp",
+		".webp": "image/webp",
+		".mp4":  "video/mp4",
+		".mov":  "video/quicktime",
+		".avi":  "video/x-msvideo",
+		".mp3":  "audio/mpeg",
+		".wav":  "audio/wav",
+		".pdf":  "application/pdf",
+		".doc":  "application/msword",
+		".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+		".xls":  "application/vnd.ms-excel",
+		".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+		".ppt":  "application/vnd.ms-powerpoint",
+		".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+		".txt":  "text/plain",
+		".zip":  "application/zip",
+		".tar":  "application/x-tar",
+		".gz":   "application/gzip",
+	}
+
+	for ext, mimeType := range extToMime {
+		if len(lowerName) >= len(ext) && lowerName[len(lowerName)-len(ext):] == ext {
+			return mimeType
+		}
+	}
+
+	return "application/octet-stream"
 }

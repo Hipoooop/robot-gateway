@@ -14,6 +14,8 @@ import {
     MessageContentType,
     init 
 } from './src/index.js';
+import fs from 'fs';
+import path from 'path';
 
 // ==================== 配置 ====================
 const GATEWAY_URL = 'ws://localhost:8884/robot/gateway';
@@ -170,15 +172,140 @@ async function processCommand(command, args) {
             break;
         }
         
+        case 'upload': {
+            // upload <filePath> [userId]
+            if (args.length < 1) {
+                console.log('用法: upload <filePath> [userId]');
+                console.log('示例: upload ./test.jpg');
+                console.log('示例: upload ./test.jpg user1');
+                return;
+            }
+            const filePath = args[0];
+            const targetUserId = args[1]; // 可选，如果提供则发送图片消息
+            
+            try {
+                // 检查文件是否存在
+                if (!fs.existsSync(filePath)) {
+                    console.log('❌ 文件不存在:', filePath);
+                    return;
+                }
+                
+                // 读取文件
+                const fileData = fs.readFileSync(filePath);
+                const fileName = path.basename(filePath);
+                
+                console.log(`📤 正在上传文件: ${fileName} (${fileData.length} 字节)`);
+                
+                // 上传文件
+                const result = await client.uploadFile(fileData, fileName);
+                
+                if (result.isSuccess()) {
+                    console.log('✅ 文件上传成功!');
+                    console.log('📎 下载URL:', result.result);
+                    
+                    // 如果提供了目标用户，发送图片/文件消息
+                    if (targetUserId) {
+                        const fileExt = path.extname(fileName).toLowerCase();
+                        const isImage = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'].includes(fileExt);
+                        
+                        const conversation = new Conversation(ConversationType.Single, targetUserId, 0);
+                        const payload = {
+                            type: isImage ? MessageContentType.Image : MessageContentType.File,
+                            searchableContent: isImage ? '[图片]' : `[文件] ${fileName}`,
+                            remoteMediaUrl: result.result
+                        };
+                        
+                        const sendResult = await client.sendMessage(ROBOT_ID, conversation, payload);
+                        if (sendResult.isSuccess()) {
+                            console.log(`✅ ${isImage ? '图片' : '文件'}消息已发送给 ${targetUserId}`);
+                        } else {
+                            console.log('❌ 发送消息失败:', sendResult.getMsg());
+                        }
+                    }
+                } else {
+                    console.log('❌ 上传失败:', result.msg);
+                }
+            } catch (error) {
+                console.error('❌ 上传错误:', error.message);
+            }
+            break;
+        }
+        
+        case 'upload-stream': {
+            // upload-stream <filePath> [userId]
+            if (args.length < 1) {
+                console.log('用法: upload-stream <filePath> [userId]');
+                console.log('示例: upload-stream ./large-video.mp4');
+                return;
+            }
+            const filePath = args[0];
+            const targetUserId = args[1];
+            
+            try {
+                if (!fs.existsSync(filePath)) {
+                    console.log('❌ 文件不存在:', filePath);
+                    return;
+                }
+                
+                const fileName = path.basename(filePath);
+                const stats = fs.statSync(filePath);
+                
+                console.log(`📤 正在使用流式上传: ${fileName} (${stats.size} 字节)`);
+                
+                // 创建可读流
+                const stream = fs.createReadStream(filePath);
+                
+                // 将流转换为 Buffer（实际生产环境可能需要分片上传大文件）
+                const chunks = [];
+                for await (const chunk of stream) {
+                    chunks.push(chunk);
+                }
+                const fileData = Buffer.concat(chunks);
+                
+                const result = await client.uploadFile(fileData, fileName);
+                
+                if (result.isSuccess()) {
+                    console.log('✅ 流式上传成功!');
+                    console.log('📎 下载URL:', result.result);
+                    
+                    if (targetUserId) {
+                        const fileExt = path.extname(fileName).toLowerCase();
+                        const isVideo = ['.mp4', '.mov', '.avi'].includes(fileExt);
+                        
+                        const conversation = new Conversation(ConversationType.Single, targetUserId, 0);
+                        const payload = {
+                            type: isVideo ? MessageContentType.Video : MessageContentType.File,
+                            searchableContent: isVideo ? '[视频]' : `[文件] ${fileName}`,
+                            remoteMediaUrl: result.result
+                        };
+                        
+                        const sendResult = await client.sendMessage(ROBOT_ID, conversation, payload);
+                        if (sendResult.isSuccess()) {
+                            console.log(`✅ ${isVideo ? '视频' : '文件'}消息已发送给 ${targetUserId}`);
+                        } else {
+                            console.log('❌ 发送消息失败:', sendResult.getMsg());
+                        }
+                    }
+                } else {
+                    console.log('❌ 流式上传失败:', result.msg);
+                }
+            } catch (error) {
+                console.error('❌ 流式上传错误:', error.message);
+            }
+            break;
+        }
+        
         case 'help': {
             console.log('\n可用命令:');
-            console.log('  send <userId> <message>   - 发送消息');
-            console.log('  info <userId>             - 获取用户信息');
-            console.log('  group <name> <members...> - 创建群组');
-            console.log('  profile                   - 获取机器人资料');
-            console.log('  status                    - 查看连接状态');
-            console.log('  help                      - 显示帮助');
-            console.log('  quit                      - 退出程序');
+            console.log('  send <userId> <message>         - 发送消息');
+            console.log('  info <userId>                   - 获取用户信息');
+            console.log('  group <name> <members...>       - 创建群组');
+            console.log('  profile                         - 获取机器人资料');
+            console.log('  status                          - 查看连接状态');
+            console.log('  upload <filePath> [userId]      - 上传文件(支持七牛/S3/OSS)');
+            console.log('  upload-stream <filePath> [userId] - 流式上传大文件');
+            console.log('  help                            - 显示帮助');
+            console.log('  quit                            - 退出程序');
             break;
         }
         
