@@ -49,6 +49,12 @@ public class RobotGatewayEndpoint extends TextWebSocketHandler {
         String sessionId = session.getId();
         LOG.debug("Received message from {}: {}", sessionId, payload);
 
+        // 检查session是否仍然有效
+        if (!session.isOpen()) {
+            LOG.warn("Session {} is already closed, skipping message processing", sessionId);
+            return;
+        }
+
         try {
             // 尝试解析为鉴权消息
             ConnectMessage connectMsg = parseConnectMessage(payload);
@@ -93,13 +99,20 @@ public class RobotGatewayEndpoint extends TextWebSocketHandler {
             sessionManager.sendMessage(session, response);
 
         } catch (JsonSyntaxException e) {
-            LOG.error("Failed to parse message: {}", e.getMessage());
+            LOG.error("Failed to parse message from {}: {}", sessionId, e.getMessage());
             ConnectMessage error = ConnectMessage.error(400, "Invalid JSON format: " + e.getMessage());
             sessionManager.sendMessage(session, error);
         } catch (Exception e) {
-            LOG.error("Failed to handle message: {}", e.getMessage(), e);
-            ConnectMessage error = ConnectMessage.error(500, "Internal server error: " + e.getMessage());
-            sessionManager.sendMessage(session, error);
+            LOG.error("Failed to handle message from {}: {}", sessionId, e.getMessage(), e);
+            // 检查session是否仍然打开，避免在异常后继续操作已关闭的session
+            if (session.isOpen()) {
+                try {
+                    ConnectMessage error = ConnectMessage.error(500, "Internal server error: " + e.getMessage());
+                    sessionManager.sendMessage(session, error);
+                } catch (Exception ex) {
+                    LOG.error("Failed to send error message to session {}: {}", sessionId, ex.getMessage());
+                }
+            }
         }
     }
 
@@ -173,14 +186,21 @@ public class RobotGatewayEndpoint extends TextWebSocketHandler {
     @Override
     public void handleTransportError(WebSocketSession session, Throwable exception) throws Exception {
         LOG.error("WebSocket transport error for session {}: {}", session.getId(), exception.getMessage());
-        sessionManager.removeSession(session);
+        try {
+            sessionManager.removeSession(session);
+        } catch (Exception e) {
+            LOG.error("Error removing session {} after transport error: {}", session.getId(), e.getMessage());
+        }
     }
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) throws Exception {
-        super.afterConnectionClosed(session, status);
-        sessionManager.removeSession(session);
         LOG.info("WebSocket connection closed: {}, status: {}", session.getId(), status);
+        try {
+            sessionManager.removeSession(session);
+        } catch (Exception e) {
+            LOG.error("Error removing session {} after close: {}", session.getId(), e.getMessage());
+        }
     }
 
     @Override

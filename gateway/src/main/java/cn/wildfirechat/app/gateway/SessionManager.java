@@ -10,7 +10,10 @@ import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
 import javax.annotation.PostConstruct;
+import javax.annotation.PreDestroy;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -28,22 +31,16 @@ public class SessionManager {
 
     /**
      * 存储所有活跃的WebSocket会话
-     * key: sessionId
-     * value: WebSocketSession
      */
     private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
 
     /**
      * 会话信息
-     * key: sessionId
-     * value: SessionInfo (包含鉴权状态、机器人ID、RobotService实例)
      */
     private final Map<String, SessionInfo> sessionInfos = new ConcurrentHashMap<>();
 
     /**
-     * 机器人ID到sessionId集合的映射（支持一个机器人多个连接）
-     * key: robotId
-     * value: sessionId集合
+     * 机器人ID到sessionId集合的映射
      */
     private final Map<String, Set<String>> robotSessionMap = new ConcurrentHashMap<>();
 
@@ -69,29 +66,28 @@ public class SessionManager {
      * 移除会话
      */
     public void removeSession(WebSocketSession session) {
+        if (session == null) {
+            return;
+        }
         removeSessionById(session.getId());
     }
 
     /**
-     * 通过sessionId移除会话（内部使用）
+     * 通过sessionId移除会话
      */
     private void removeSessionById(String sessionId) {
         SessionInfo info = sessionInfos.remove(sessionId);
         WebSocketSession session = sessions.remove(sessionId);
 
-        if (info != null) {
-            // 从robotSessionMap中移除
-            if (info.getRobotId() != null) {
-                Set<String> robotSessions = robotSessionMap.get(info.getRobotId());
-                if (robotSessions != null) {
-                    robotSessions.remove(sessionId);
-                    if (robotSessions.isEmpty()) {
-                        robotSessionMap.remove(info.getRobotId());
-                    }
+        if (info != null && info.getRobotId() != null) {
+            Set<String> robotSessions = robotSessionMap.get(info.getRobotId());
+            if (robotSessions != null) {
+                robotSessions.remove(sessionId);
+                if (robotSessions.isEmpty()) {
+                    robotSessionMap.remove(info.getRobotId());
                 }
             }
-
-            // 关闭RobotService实例
+            // 关闭RobotService
             if (info.getRobotService() != null) {
                 try {
                     info.getRobotService().close();
@@ -101,7 +97,7 @@ public class SessionManager {
             }
         }
 
-        // 关闭WebSocket连接（如果还在打开状态）
+        // 关闭WebSocket连接
         if (session != null && session.isOpen()) {
             try {
                 session.close();
@@ -115,7 +111,6 @@ public class SessionManager {
 
     /**
      * 鉴权会话
-     * @return 鉴权是否成功
      */
     public boolean authenticateSession(String sessionId, String robotId, RobotService robotService) {
         SessionInfo info = sessionInfos.get(sessionId);
@@ -128,11 +123,9 @@ public class SessionManager {
         info.setRobotId(robotId);
         info.setRobotService(robotService);
 
-        // 更新robotSessionMap
         robotSessionMap.computeIfAbsent(robotId, k -> new CopyOnWriteArraySet<>()).add(sessionId);
 
-        LOG.info("Session {} authenticated as robot {}, total connections for this robot: {}", 
-                sessionId, robotId, robotSessionMap.get(robotId).size());
+        LOG.info("Session {} authenticated as robot {}", sessionId, robotId);
         return true;
     }
 
@@ -161,28 +154,7 @@ public class SessionManager {
     }
 
     /**
-     * 通过机器人ID获取会话（获取第一个可用会话）
-     * 兼容旧代码，但建议优先使用 getSessionsByRobotId 获取所有会话
-     */
-    public WebSocketSession getSessionByRobotId(String robotId) {
-        Set<String> sessionIds = robotSessionMap.get(robotId);
-        if (sessionIds == null || sessionIds.isEmpty()) {
-            return null;
-        }
-
-        // 返回第一个有效的会话
-        for (String sessionId : sessionIds) {
-            WebSocketSession session = sessions.get(sessionId);
-            if (session != null && session.isOpen()) {
-                return session;
-            }
-        }
-        return null;
-    }
-
-    /**
-     * 通过机器人ID获取所有会话（支持一个机器人多个连接）
-     * @return 该机器人所有活跃的session集合
+     * 通过机器人ID获取所有会话
      */
     public Set<WebSocketSession> getSessionsByRobotId(String robotId) {
         Set<WebSocketSession> result = new java.util.HashSet<>();
@@ -213,45 +185,24 @@ public class SessionManager {
                 LOG.error("Failed to send message to session {}: {}", session.getId(), e.getMessage());
                 return false;
             }
-        } else {
-            LOG.error("Session is not opened");
         }
-        return false;
-    }
-
-    /**
-     * 发送消息到指定会话（通过sessionId）
-     */
-    public boolean sendMessage(String sessionId, Object message) {
-        WebSocketSession session = sessions.get(sessionId);
-        if (session != null) {
-            return sendMessage(session, message);
-        }
-        LOG.warn("Session {} not found", sessionId);
         return false;
     }
 
     /**
      * 发送消息到指定机器人
-     * 如果机器人有多个连接，消息会广播到所有连接
      */
     public boolean sendMessageToRobot(String robotId, Object message) {
-        Set<WebSocketSession> sessions = getSessionsByRobotId(robotId);
-        if (sessions.isEmpty()) {
+        Set<WebSocketSession> robotSessions = getSessionsByRobotId(robotId);
+        if (robotSessions.isEmpty()) {
             LOG.warn("Robot {} has no active sessions", robotId);
             return false;
         }
 
         boolean allSuccess = true;
-        for (WebSocketSession session : sessions) {
+        for (WebSocketSession session : robotSessions) {
             if (!sendMessage(session, message)) {
                 allSuccess = false;
-                // 发送失败，检查是否需要清理session
-                if (!session.isOpen()) {
-                    LOG.warn("Session {} is closed, scheduling cleanup", session.getId());
-                    // 异步清理避免阻塞
-                    new Thread(() -> removeSessionById(session.getId())).start();
-                }
             }
         }
         return allSuccess;
@@ -265,14 +216,7 @@ public class SessionManager {
     }
 
     /**
-     * 获取所有会话ID
-     */
-    public java.util.Set<String> getSessionIds() {
-        return sessions.keySet();
-    }
-
-    /**
-     * 检查会话是否存在
+     * 检查会话是否存在且打开
      */
     public boolean hasSession(String sessionId) {
         WebSocketSession session = sessions.get(sessionId);
@@ -283,16 +227,15 @@ public class SessionManager {
      * 关闭所有会话
      */
     public void closeAll() {
-        for (WebSocketSession session : sessions.values()) {
+        for (WebSocketSession session : new ArrayList<>(sessions.values())) {
             try {
                 if (session.isOpen()) {
                     session.close();
                 }
             } catch (IOException e) {
-                LOG.error("Failed to close session {}: {}", session.getId(), e.getMessage());
+                LOG.error("Failed to close session: {}", e.getMessage());
             }
         }
-        // 关闭所有RobotService实例
         for (SessionInfo info : sessionInfos.values()) {
             if (info.getRobotService() != null) {
                 try {
@@ -304,7 +247,14 @@ public class SessionManager {
         }
         sessions.clear();
         sessionInfos.clear();
+        robotSessionMap.clear();
         LOG.info("All sessions closed");
+    }
+
+    @PreDestroy
+    public void destroy() {
+        closeAll();
+        LOG.info("SessionManager destroyed");
     }
 
     /**
@@ -323,41 +273,15 @@ public class SessionManager {
             this.lastHeartbeatTime = System.currentTimeMillis();
         }
 
-        public String getSessionId() {
-            return sessionId;
-        }
-
-        public boolean isAuthenticated() {
-            return authenticated;
-        }
-
-        public void setAuthenticated(boolean authenticated) {
-            this.authenticated = authenticated;
-        }
-
-        public String getRobotId() {
-            return robotId;
-        }
-
-        public void setRobotId(String robotId) {
-            this.robotId = robotId;
-        }
-
-        public RobotService getRobotService() {
-            return robotService;
-        }
-
-        public void setRobotService(RobotService robotService) {
-            this.robotService = robotService;
-        }
-
-        public long getLastHeartbeatTime() {
-            return lastHeartbeatTime;
-        }
-
-        public void updateHeartbeatTime() {
-            this.lastHeartbeatTime = System.currentTimeMillis();
-        }
+        public String getSessionId() { return sessionId; }
+        public boolean isAuthenticated() { return authenticated; }
+        public void setAuthenticated(boolean authenticated) { this.authenticated = authenticated; }
+        public String getRobotId() { return robotId; }
+        public void setRobotId(String robotId) { this.robotId = robotId; }
+        public RobotService getRobotService() { return robotService; }
+        public void setRobotService(RobotService robotService) { this.robotService = robotService; }
+        public long getLastHeartbeatTime() { return lastHeartbeatTime; }
+        public void updateHeartbeatTime() { this.lastHeartbeatTime = System.currentTimeMillis(); }
     }
 
     /**
@@ -378,36 +302,28 @@ public class SessionManager {
     }
 
     /**
-     * 获取会话的最后心跳时间
+     * 定时清理超时的心跳会话（只清理已鉴权的）
+     * 每60秒执行一次
      */
-    public long getLastHeartbeatTime(String sessionId) {
-        SessionInfo info = sessionInfos.get(sessionId);
-        return info != null ? info.getLastHeartbeatTime() : 0;
-    }
-
-    /**
-     * 定时清理超时的心跳会话
-     * 每30秒执行一次
-     */
-    @Scheduled(fixedRate = 30000)
+    @Scheduled(fixedRate = 60000)
     public void cleanupExpiredSessions() {
         long now = System.currentTimeMillis();
         int count = 0;
+        List<String> toRemove = new ArrayList<>();
 
         for (Map.Entry<String, SessionInfo> entry : sessionInfos.entrySet()) {
-            String sessionId = entry.getKey();
             SessionInfo info = entry.getValue();
-
-            // 只检查已鉴权的会话
             if (info.isAuthenticated()) {
                 long lastHeartbeat = info.getLastHeartbeatTime();
                 if (now - lastHeartbeat > HEARTBEAT_TIMEOUT) {
-                    LOG.warn("Session {} heartbeat timeout (last: {}s ago), removing", 
-                            sessionId, (now - lastHeartbeat) / 1000);
-                    removeSessionById(sessionId);
-                    count++;
+                    toRemove.add(entry.getKey());
                 }
             }
+        }
+
+        for (String sessionId : toRemove) {
+            removeSessionById(sessionId);
+            count++;
         }
 
         if (count > 0) {

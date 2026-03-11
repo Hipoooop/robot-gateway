@@ -19,7 +19,9 @@ public class ExecutorConfig {
     public Executor asyncExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
         executor.setCorePoolSize(10);
-        executor.setMaxPoolSize(10);
+        executor.setMaxPoolSize(50);
+        executor.setQueueCapacity(200);
+        executor.setThreadNamePrefix("async-");
         executor.initialize();
         return executor;
     }
@@ -28,7 +30,7 @@ public class ExecutorConfig {
     public TaskScheduler taskScheduler() {
         ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
         scheduler.setPoolSize(5);
-        scheduler.setThreadNamePrefix("scheduled-task-");
+        scheduler.setThreadNamePrefix("scheduled-");
         scheduler.initialize();
         return scheduler;
     }

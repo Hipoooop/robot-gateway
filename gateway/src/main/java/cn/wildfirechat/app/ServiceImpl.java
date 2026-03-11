@@ -15,6 +15,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 
 import javax.annotation.PostConstruct;
+import javax.annotation.PreDestroy;
 import java.util.Arrays;
 
 /**
@@ -54,6 +55,21 @@ public class ServiceImpl implements Service {
                 }
             } catch (Exception e) {
                 LOG.error("Failed to initialize BotFather RobotService", e);
+            }
+        }
+    }
+
+    /**
+     * 销毁方法，关闭资源
+     */
+    @PreDestroy
+    public void destroy() {
+        if (botFatherRobotService != null) {
+            try {
+                botFatherRobotService.close();
+                LOG.info("BotFather RobotService closed successfully");
+            } catch (Exception e) {
+                LOG.error("Failed to close BotFather RobotService", e);
             }
         }
     }

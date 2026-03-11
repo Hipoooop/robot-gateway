@@ -10,19 +10,17 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
 import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
+import org.springframework.web.socket.server.standard.ServletServerContainerFactoryBean;
 
 /**
  * WebSocket配置类
- * 支持独立端口：HTTP使用8883，WebSocket使用8884
+ * 支持独立端口：HTTP使用server.port，WebSocket使用websocket.port
  */
 @Configuration
 @EnableWebSocket
 public class WebSocketConfig implements WebSocketConfigurer {
 
     private final RobotGatewayEndpoint robotGatewayEndpoint;
-
-    @Value("${server.port:8883}")
-    private int httpPort;
 
     @Value("${websocket.port:8884}")
     private int websocketPort;
@@ -33,9 +31,8 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
-        // 注册机器人网关WebSocket端点
         registry.addHandler(robotGatewayEndpoint, "/robot/gateway")
-                .setAllowedOrigins("*"); // 允许所有来源，生产环境应限制
+                .setAllowedOrigins("*");
     }
 
     /**
@@ -44,10 +41,21 @@ public class WebSocketConfig implements WebSocketConfigurer {
     @Bean
     public WebServerFactoryCustomizer<TomcatServletWebServerFactory> tomcatCustomizer() {
         return factory -> {
-            // 添加WebSocket端口的连接器
             Connector connector = new Connector(TomcatServletWebServerFactory.DEFAULT_PROTOCOL);
             connector.setPort(websocketPort);
             factory.addAdditionalTomcatConnectors(connector);
         };
+    }
+
+    /**
+     * 配置WebSocket容器缓冲区大小
+     */
+    @Bean
+    public ServletServerContainerFactoryBean createWebSocketContainer() {
+        ServletServerContainerFactoryBean container = new ServletServerContainerFactoryBean();
+        container.setMaxTextMessageBufferSize(8192);
+        container.setMaxBinaryMessageBufferSize(8192);
+        container.setMaxSessionIdleTimeout(300000L);
+        return container;
     }
 }
