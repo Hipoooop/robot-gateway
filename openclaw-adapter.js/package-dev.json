@@ -22,7 +22,7 @@
   "author": "WildfireChat",
   "license": "MIT",
   "dependencies": {
-    "@wildfirechat/robot-gateway-client-sdk": "file:../robot-gateway-client-sdk.js",
+    "@wildfirechat/robot-gateway-client-sdk": "file:../client.js",
     "@wildfirechat/server-sdk": "file:../../server-sdk.js",
     "ws": "^8.16.0"
   }

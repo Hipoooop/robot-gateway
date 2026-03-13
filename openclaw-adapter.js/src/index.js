@@ -7,6 +7,9 @@ export { HealthServer } from './server/HealthServer.js';
 export { WhitelistFilter } from './filter/WhitelistFilter.js';
 export { GroupFilter } from './filter/GroupFilter.js';
 
+// 导出 Session 管理
+export { SessionContextManager, SessionContext } from './session/SessionContextManager.js';
+
 // 导出转换器
 export { MessageConverter } from './converter/MessageConverter.js';
 

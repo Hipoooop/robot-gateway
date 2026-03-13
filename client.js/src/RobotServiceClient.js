@@ -4,7 +4,7 @@ import { RequestMessage } from './protocol/RequestMessage.js';
 
 /**
  * RobotService 客户端
- * 提供与 Java 版 RobotService 相同的 API
+ * 提供与 Java 版 RobotServiceClient 完全相同的 API
  * 
  * 注意：使用 @../server-sdk.js 中的模型类（Conversation, MessagePayload 等）
  */
@@ -59,6 +59,14 @@ export class RobotServiceClient {
     }
 
     /**
+     * 获取机器人ID
+     * @returns {string} - 机器人ID
+     */
+    getRobotId() {
+        return this.connectionManager.robotId;
+    }
+
+    /**
      * 发送请求并包装为 IMResult
      * @param {string} method - 方法名
      * @param {Array} params - 参数数组
@@ -82,45 +90,53 @@ export class RobotServiceClient {
 
     /**
      * 发送消息
-     * @param {string} fromUser - 发送者用户ID
      * @param {Conversation} conversation - 会话对象
      * @param {MessagePayload} payload - 消息内容
      * @returns {Promise<IMResult>}
      */
-    async sendMessage(fromUser, conversation, payload) {
-        return this.invoke('sendMessage', [fromUser, conversation, payload]);
+    async sendMessage(conversation, payload) {
+        return this.invoke('sendMessage', [this.getRobotId(), conversation, payload]);
+    }
+
+    /**
+     * 发送消息（指定接收者）
+     * @param {Conversation} conversation - 会话对象
+     * @param {MessagePayload} payload - 消息内容
+     * @param {Array<string>} toUsers - 指定接收者用户ID列表
+     * @returns {Promise<IMResult>}
+     */
+    async sendMessageToUsers(conversation, payload, toUsers) {
+        return this.invoke('sendMessage', [this.getRobotId(), conversation, payload, toUsers]);
     }
 
     /**
      * 回复消息
-     * @param {string} fromUser - 发送者用户ID
-     * @param {Object} message - 原消息对象
+     * @param {number} messageId - 原消息ID
      * @param {MessagePayload} payload - 回复内容
+     * @param {boolean} mentionSender - 是否@原消息发送者
      * @returns {Promise<IMResult>}
      */
-    async replyMessage(fromUser, message, payload) {
-        return this.invoke('replyMessage', [fromUser, message, payload]);
+    async replyMessage(messageId, payload, mentionSender) {
+        return this.invoke('replyMessage', [messageId, payload, mentionSender]);
     }
 
     /**
      * 撤回消息
-     * @param {string} fromUser - 操作者用户ID
      * @param {number} messageId - 消息ID
      * @returns {Promise<IMResult>}
      */
-    async recallMessage(fromUser, messageId) {
-        return this.invoke('recallMessage', [fromUser, messageId]);
+    async recallMessage(messageId) {
+        return this.invoke('recallMessage', [messageId]);
     }
 
     /**
      * 更新消息
-     * @param {string} fromUser - 操作者用户ID
      * @param {number} messageId - 消息ID
      * @param {MessagePayload} payload - 新消息内容
      * @returns {Promise<IMResult>}
      */
-    async updateMessage(fromUser, messageId, payload) {
-        return this.invoke('updateMessage', [fromUser, messageId, payload]);
+    async updateMessage(messageId, payload) {
+        return this.invoke('updateMessage', [messageId, payload]);
     }
 
     // ==================== 用户相关 API ====================
@@ -137,11 +153,10 @@ export class RobotServiceClient {
     /**
      * 通过手机号获取用户
      * @param {string} mobile - 手机号
-     * @param {string} areaCode - 区号
      * @returns {Promise<IMResult>}
      */
-    async getUserInfoByMobile(mobile, areaCode = '86') {
-        return this.invoke('getUserInfoByMobile', [mobile, areaCode]);
+    async getUserInfoByMobile(mobile) {
+        return this.invoke('getUserInfoByMobile', [mobile]);
     }
 
     /**
@@ -155,166 +170,11 @@ export class RobotServiceClient {
 
     /**
      * 应用获取用户信息
-     * @param {string} applicationId - 应用ID
      * @param {string} userId - 用户ID
      * @returns {Promise<IMResult>}
      */
-    async applicationGetUserInfo(applicationId, userId) {
-        return this.invoke('applicationGetUserInfo', [applicationId, userId]);
-    }
-
-    // ==================== 群组相关 API ====================
-
-    /**
-     * 创建群组
-     * @param {Object} groupInfo - 群组信息
-     * @param {Array} members - 成员列表
-     * @param {Array} lines - 会话线路
-     * @param {MessagePayload} notifyMessage - 通知消息
-     * @returns {Promise<IMResult>}
-     */
-    async createGroup(groupInfo, members, lines = [0], notifyMessage = null) {
-        return this.invoke('createGroup', [groupInfo, members, lines, notifyMessage]);
-    }
-
-    /**
-     * 获取群组信息
-     * @param {string} groupId - 群组ID
-     * @param {number} updateDt - 更新时间
-     * @returns {Promise<IMResult>}
-     */
-    async getGroupInfo(groupId, updateDt = 0) {
-        return this.invoke('getGroupInfo', [groupId, updateDt]);
-    }
-
-    /**
-     * 解散群组
-     * @param {string} groupId - 群组ID
-     * @returns {Promise<IMResult>}
-     */
-    async dismissGroup(groupId) {
-        return this.invoke('dismissGroup', [groupId]);
-    }
-
-    /**
-     * 转让群组
-     * @param {string} groupId - 群组ID
-     * @param {string} newOwner - 新群主用户ID
-     * @returns {Promise<IMResult>}
-     */
-    async transferGroup(groupId, newOwner) {
-        return this.invoke('transferGroup', [groupId, newOwner]);
-    }
-
-    /**
-     * 修改群组信息
-     * @param {string} groupId - 群组ID
-     * @param {number} modifyType - 修改类型
-     * @param {string} value - 新值
-     * @returns {Promise<IMResult>}
-     */
-    async modifyGroupInfo(groupId, modifyType, value) {
-        return this.invoke('modifyGroupInfo', [groupId, modifyType, value]);
-    }
-
-    /**
-     * 获取群组成员
-     * @param {string} groupId - 群组ID
-     * @param {number} updateDt - 更新时间
-     * @returns {Promise<IMResult>}
-     */
-    async getGroupMembers(groupId, updateDt = 0) {
-        return this.invoke('getGroupMembers', [groupId, updateDt]);
-    }
-
-    /**
-     * 获取指定群成员信息
-     * @param {string} groupId - 群组ID
-     * @param {string} userId - 用户ID
-     * @returns {Promise<IMResult>}
-     */
-    async getGroupMember(groupId, userId) {
-        return this.invoke('getGroupMember', [groupId, userId]);
-    }
-
-    /**
-     * 添加群成员
-     * @param {string} groupId - 群组ID
-     * @param {Array} members - 成员列表
-     * @param {Array} lines - 会话线路
-     * @param {MessagePayload} notifyMessage - 通知消息
-     * @returns {Promise<IMResult>}
-     */
-    async addGroupMembers(groupId, members, lines = [0], notifyMessage = null) {
-        return this.invoke('addGroupMembers', [groupId, members, lines, notifyMessage]);
-    }
-
-    /**
-     * 踢出群成员
-     * @param {string} groupId - 群组ID
-     * @param {Array} memberIds - 成员ID列表
-     * @param {Array} lines - 会话线路
-     * @param {MessagePayload} notifyMessage - 通知消息
-     * @returns {Promise<IMResult>}
-     */
-    async kickoffGroupMembers(groupId, memberIds, lines = [0], notifyMessage = null) {
-        return this.invoke('kickoffGroupMembers', [groupId, memberIds, lines, notifyMessage]);
-    }
-
-    /**
-     * 退出群组
-     * @param {string} groupId - 群组ID
-     * @param {Array} lines - 会话线路
-     * @param {MessagePayload} notifyMessage - 通知消息
-     * @returns {Promise<IMResult>}
-     */
-    async quitGroup(groupId, lines = [0], notifyMessage = null) {
-        return this.invoke('quitGroup', [groupId, lines, notifyMessage]);
-    }
-
-    /**
-     * 设置群管理员
-     * @param {string} groupId - 群组ID
-     * @param {Array} managers - 管理员ID列表
-     * @param {number} type - 操作类型：0 取消，1 设置
-     * @returns {Promise<IMResult>}
-     */
-    async setGroupManager(groupId, managers, type) {
-        return this.invoke('setGroupManager', [groupId, managers, type]);
-    }
-
-    /**
-     * 禁言群成员
-     * @param {string} groupId - 群组ID
-     * @param {Array} members - 成员ID列表
-     * @param {number} type - 操作类型：0 取消禁言，1 禁言
-     * @param {number} time - 禁言时长（毫秒）
-     * @returns {Promise<IMResult>}
-     */
-    async muteGroupMember(groupId, members, type, time = 0) {
-        return this.invoke('muteGroupMember', [groupId, members, type, time]);
-    }
-
-    /**
-     * 允许群成员发言
-     * @param {string} groupId - 群组ID
-     * @param {Array} members - 成员ID列表
-     * @param {number} type - 操作类型
-     * @returns {Promise<IMResult>}
-     */
-    async allowGroupMember(groupId, members, type) {
-        return this.invoke('allowGroupMember', [groupId, members, type]);
-    }
-
-    /**
-     * 设置群成员别名
-     * @param {string} groupId - 群组ID
-     * @param {string} userId - 用户ID
-     * @param {string} alias - 别名
-     * @returns {Promise<IMResult>}
-     */
-    async setGroupMemberAlias(groupId, userId, alias) {
-        return this.invoke('setGroupMemberAlias', [groupId, userId, alias]);
+    async applicationGetUserInfo(userId) {
+        return this.invoke('applicationGetUserInfo', [userId]);
     }
 
     // ==================== 机器人资料 API ====================
@@ -329,49 +189,334 @@ export class RobotServiceClient {
 
     /**
      * 更新机器人资料
-     * @param {Object} profile - 机器人资料
+     * @param {number} type - 资料类型
+     * @param {string} value - 资料值
      * @returns {Promise<IMResult>}
      */
-    async updateProfile(profile) {
-        return this.invoke('updateProfile', [profile]);
+    async updateProfile(type, value) {
+        return this.invoke('updateProfile', [type, value]);
+    }
+
+    // ==================== 群组相关 API ====================
+
+    /**
+     * 创建群组
+     * @param {Object} groupInfo - 群组信息
+     * @param {Array} members - 成员列表
+     * @param {string} to - 目标用户（创建群时的邀请者）
+     * @param {Array<number>} lines - 会话线路
+     * @param {MessagePayload} payload - 通知消息
+     * @returns {Promise<IMResult>}
+     */
+    async createGroup(groupInfo, members, to, lines, payload) {
+        return this.invoke('createGroup', [groupInfo, members, to, lines, payload]);
     }
 
     /**
-     * 设置回调地址
-     * @param {string} url - 回调地址
+     * 获取群组信息
+     * @param {string} groupId - 群组ID
      * @returns {Promise<IMResult>}
      */
-    async setCallback(url) {
-        return this.invoke('setCallback', [url]);
+    async getGroupInfo(groupId) {
+        return this.invoke('getGroupInfo', [groupId]);
     }
 
     /**
-     * 获取回调地址
+     * 解散群组
+     * @param {string} groupId - 群组ID
+     * @param {Array<number>} lines - 会话线路
+     * @param {MessagePayload} payload - 通知消息
      * @returns {Promise<IMResult>}
      */
-    async getCallback() {
-        return this.invoke('getCallback', []);
-    }
-
-    // ==================== 会话相关 API ====================
-
-    /**
-     * 获取会话信息
-     * @param {Conversation} conversation - 会话对象
-     * @returns {Promise<IMResult>}
-     */
-    async getConversationInfo(conversation) {
-        return this.invoke('getConversationInfo', [conversation]);
+    async dismissGroup(groupId, lines, payload) {
+        return this.invoke('dismissGroup', [groupId, lines, payload]);
     }
 
     /**
-     * 获取会话列表
+     * 转让群组
+     * @param {string} groupId - 群组ID
+     * @param {string} newOwner - 新群主用户ID
+     * @param {Array<number>} lines - 会话线路
+     * @param {MessagePayload} payload - 通知消息
+     * @returns {Promise<IMResult>}
+     */
+    async transferGroup(groupId, newOwner, lines, payload) {
+        return this.invoke('transferGroup', [groupId, newOwner, lines, payload]);
+    }
+
+    /**
+     * 修改群组信息
+     * @param {string} groupId - 群组ID
+     * @param {number} type - 修改类型
+     * @param {string} value - 新值
+     * @param {Array<number>} lines - 会话线路
+     * @param {MessagePayload} payload - 通知消息
+     * @returns {Promise<IMResult>}
+     */
+    async modifyGroupInfo(groupId, type, value, lines, payload) {
+        return this.invoke('modifyGroupInfo', [groupId, type, value, lines, payload]);
+    }
+
+    /**
+     * 获取群组成员
+     * @param {string} groupId - 群组ID
+     * @returns {Promise<IMResult>}
+     */
+    async getGroupMembers(groupId) {
+        return this.invoke('getGroupMembers', [groupId]);
+    }
+
+    /**
+     * 获取指定群成员信息
+     * @param {string} groupId - 群组ID
+     * @param {string} memberId - 成员ID
+     * @returns {Promise<IMResult>}
+     */
+    async getGroupMember(groupId, memberId) {
+        return this.invoke('getGroupMember', [groupId, memberId]);
+    }
+
+    /**
+     * 添加群成员
+     * @param {string} groupId - 群组ID
+     * @param {Array} members - 成员列表
+     * @param {string} to - 目标用户
+     * @param {Array<number>} lines - 会话线路
+     * @param {MessagePayload} payload - 通知消息
+     * @returns {Promise<IMResult>}
+     */
+    async addGroupMembers(groupId, members, to, lines, payload) {
+        return this.invoke('addGroupMembers', [groupId, members, to, lines, payload]);
+    }
+
+    /**
+     * 设置群管理员
+     * @param {string} groupId - 群组ID
+     * @param {Array<string>} members - 成员ID列表
+     * @param {boolean} isManager - 是否为管理员
+     * @param {Array<number>} lines - 会话线路
+     * @param {MessagePayload} payload - 通知消息
+     * @returns {Promise<IMResult>}
+     */
+    async setGroupManager(groupId, members, isManager, lines, payload) {
+        return this.invoke('setGroupManager', [groupId, members, isManager, lines, payload]);
+    }
+
+    /**
+     * 禁言群成员
+     * @param {string} groupId - 群组ID
+     * @param {Array<string>} members - 成员ID列表
+     * @param {boolean} mute - 是否禁言
+     * @param {Array<number>} lines - 会话线路
+     * @param {MessagePayload} payload - 通知消息
+     * @returns {Promise<IMResult>}
+     */
+    async muteGroupMember(groupId, members, mute, lines, payload) {
+        return this.invoke('muteGroupMember', [groupId, members, mute, lines, payload]);
+    }
+
+    /**
+     * 允许群成员发言
+     * @param {string} groupId - 群组ID
+     * @param {Array<string>} members - 成员ID列表
+     * @param {boolean} allow - 是否允许
+     * @param {Array<number>} lines - 会话线路
+     * @param {MessagePayload} payload - 通知消息
+     * @returns {Promise<IMResult>}
+     */
+    async allowGroupMember(groupId, members, allow, lines, payload) {
+        return this.invoke('allowGroupMember', [groupId, members, allow, lines, payload]);
+    }
+
+    /**
+     * 踢出群成员
+     * @param {string} groupId - 群组ID
+     * @param {Array<string>} members - 成员ID列表
+     * @param {Array<number>} lines - 会话线路
+     * @param {MessagePayload} payload - 通知消息
+     * @returns {Promise<IMResult>}
+     */
+    async kickoffGroupMembers(groupId, members, lines, payload) {
+        return this.invoke('kickoffGroupMembers', [groupId, members, lines, payload]);
+    }
+
+    /**
+     * 退出群组
+     * @param {string} groupId - 群组ID
+     * @param {Array<number>} lines - 会话线路
+     * @param {MessagePayload} payload - 通知消息
+     * @returns {Promise<IMResult>}
+     */
+    async quitGroup(groupId, lines, payload) {
+        return this.invoke('quitGroup', [groupId, lines, payload]);
+    }
+
+    /**
+     * 设置群成员别名
+     * @param {string} groupId - 群组ID
+     * @param {string} memberId - 成员ID
+     * @param {string} alias - 别名
+     * @param {Array<number>} lines - 会话线路
+     * @param {MessagePayload} payload - 通知消息
+     * @returns {Promise<IMResult>}
+     */
+    async setGroupMemberAlias(groupId, memberId, alias, lines, payload) {
+        return this.invoke('setGroupMemberAlias', [groupId, memberId, alias, lines, payload]);
+    }
+
+    /**
+     * 设置群成员扩展信息
+     * @param {string} groupId - 群组ID
+     * @param {string} memberId - 成员ID
+     * @param {string} extra - 扩展信息
+     * @param {Array<number>} lines - 会话线路
+     * @param {MessagePayload} payload - 通知消息
+     * @returns {Promise<IMResult>}
+     */
+    async setGroupMemberExtra(groupId, memberId, extra, lines, payload) {
+        return this.invoke('setGroupMemberExtra', [groupId, memberId, extra, lines, payload]);
+    }
+
+    // ==================== 朋友圈相关 API ====================
+
+    /**
+     * 发布朋友圈动态
+     * @param {number} type - 动态类型
+     * @param {string} text - 文本内容
+     * @param {Array<MediaEntry>} medias - 媒体列表
+     * @param {Array<string>} mentionUsers - @用户列表
+     * @param {Array<string>} allowUsers - 允许查看的用户列表
+     * @param {Array<string>} denyUsers - 禁止查看的用户列表
+     * @param {string} extra - 扩展信息
+     * @returns {Promise<IMResult>}
+     */
+    async postMomentsFeed(type, text, medias, mentionUsers, allowUsers, denyUsers, extra) {
+        return this.invoke('postMomentsFeed', [type, text, medias, mentionUsers, allowUsers, denyUsers, extra]);
+    }
+
+    /**
+     * 更新朋友圈动态
+     * @param {number} feedId - 动态ID
+     * @param {number} type - 动态类型
+     * @param {string} text - 文本内容
+     * @param {Array<MediaEntry>} medias - 媒体列表
+     * @param {Array<string>} mentionUsers - @用户列表
+     * @param {Array<string>} allowUsers - 允许查看的用户列表
+     * @param {Array<string>} denyUsers - 禁止查看的用户列表
+     * @param {string} extra - 扩展信息
+     * @returns {Promise<IMResult>}
+     */
+    async updateMomentsFeed(feedId, type, text, medias, mentionUsers, allowUsers, denyUsers, extra) {
+        return this.invoke('updateMomentsFeed', [feedId, type, text, medias, mentionUsers, allowUsers, denyUsers, extra]);
+    }
+
+    /**
+     * 获取朋友圈动态列表
+     * @param {number} lastTimestamp - 最后时间戳
+     * @param {number} count - 获取数量
+     * @param {string} userId - 用户ID（可选，获取指定用户的朋友圈）
+     * @returns {Promise<IMResult>}
+     */
+    async getMomentsFeeds(lastTimestamp, count, userId) {
+        return this.invoke('getMomentsFeeds', [lastTimestamp, count, userId]);
+    }
+
+    /**
+     * 获取指定朋友圈动态
+     * @param {number} feedId - 动态ID
+     * @returns {Promise<IMResult>}
+     */
+    async getMomentsFeed(feedId) {
+        return this.invoke('getMomentsFeed', [feedId]);
+    }
+
+    /**
+     * 删除朋友圈动态
+     * @param {number} feedId - 动态ID
+     * @returns {Promise<IMResult>}
+     */
+    async deleteMomentsFeed(feedId) {
+        return this.invoke('deleteMomentsFeed', [feedId]);
+    }
+
+    /**
+     * 发布朋友圈评论
+     * @param {number} feedId - 动态ID
+     * @param {number} commentId - 评论ID（回复评论时使用）
+     * @param {number} type - 评论类型
+     * @param {string} text - 评论内容
+     * @param {string} replyTo - 回复对象用户ID
+     * @param {string} extra - 扩展信息
+     * @returns {Promise<IMResult>}
+     */
+    async postMomentsComment(feedId, commentId, type, text, replyTo, extra) {
+        return this.invoke('postMomentsComment', [feedId, commentId, type, text, replyTo, extra]);
+    }
+
+    /**
+     * 删除朋友圈评论
+     * @param {number} feedId - 动态ID
+     * @param {number} commentId - 评论ID
+     * @returns {Promise<IMResult>}
+     */
+    async deleteMomentsComment(feedId, commentId) {
+        return this.invoke('deleteMomentsComment', [feedId, commentId]);
+    }
+
+    /**
+     * 获取用户朋友圈资料
      * @param {string} userId - 用户ID
-     * @param {number} line - 会话线路
      * @returns {Promise<IMResult>}
      */
-    async getUserConversations(userId, line = 0) {
-        return this.invoke('getUserConversations', [userId, line]);
+    async getUserMomentsProfile(userId) {
+        return this.invoke('getUserMomentsProfile', [userId]);
+    }
+
+    /**
+     * 更新朋友圈背景图片
+     * @param {string} backgroundUrl - 背景图片URL
+     * @returns {Promise<IMResult>}
+     */
+    async updateMomentsBackgroundUrl(backgroundUrl) {
+        return this.invoke('updateMomentsBackgroundUrl', [backgroundUrl]);
+    }
+
+    /**
+     * 更新朋友圈陌生人可见数量
+     * @param {number} count - 可见数量
+     * @returns {Promise<IMResult>}
+     */
+    async updateMomentsStrangerVisibleCount(count) {
+        return this.invoke('updateMomentsStrangerVisibleCount', [count]);
+    }
+
+    /**
+     * 更新朋友圈可见范围
+     * @param {number} scope - 可见范围
+     * @returns {Promise<IMResult>}
+     */
+    async updateMomentsVisibleScope(scope) {
+        return this.invoke('updateMomentsVisibleScope', [scope]);
+    }
+
+    /**
+     * 更新朋友圈黑名单
+     * @param {Array<string>} addBlackUsers - 添加的黑名单用户
+     * @param {Array<string>} removeBlackUsers - 移除的黑名单用户
+     * @returns {Promise<IMResult>}
+     */
+    async updateMomentsBlackList(addBlackUsers, removeBlackUsers) {
+        return this.invoke('updateMomentsBlackList', [addBlackUsers, removeBlackUsers]);
+    }
+
+    /**
+     * 更新朋友圈屏蔽列表
+     * @param {Array<string>} addBlockUsers - 添加的屏蔽用户
+     * @param {Array<string>} removeBlockUsers - 移除的屏蔽用户
+     * @returns {Promise<IMResult>}
+     */
+    async updateMomentsBlockList(addBlockUsers, removeBlockUsers) {
+        return this.invoke('updateMomentsBlockList', [addBlockUsers, removeBlockUsers]);
     }
 
     // ==================== 文件上传相关 API ====================
@@ -388,7 +533,7 @@ export class RobotServiceClient {
     }
 
     /**
-     * 上传文件（支持七牛云和其他对象存储）
+     * 上传文件
      * @param {Buffer|Blob|File} fileData - 文件数据
      * @param {string} fileName - 文件名
      * @param {number} type - 文件类型，默认4
@@ -436,7 +581,6 @@ export class RobotServiceClient {
 
     /**
      * 上传到七牛云
-     * 使用multipart/form-data格式
      * @param {OutputPresignedUploadUrl} presignedUrl - 预签名URL信息
      * @param {Buffer|Blob|File} fileData - 文件数据
      * @param {string} fileName - 文件名
@@ -459,44 +603,18 @@ export class RobotServiceClient {
         const key = uploadUrl.substring(secondQuestion + 1);
 
         try {
-            // 构建FormData
-            const formData = new FormData();
-            formData.append('token', token);
-            formData.append('key', key);
+            // Node.js 环境使用 node-fetch
+            const { default: fetch } = await import('node-fetch');
+            const FormData = (await import('form-data')).default;
+            const nodeFormData = new FormData();
+            nodeFormData.append('token', token);
+            nodeFormData.append('key', key);
+            nodeFormData.append('file', fileData, { filename: fileName, contentType: mediaType });
             
-            // 处理文件数据
-            let blob;
-            if (fileData instanceof Buffer) {
-                blob = new Blob([fileData], { type: mediaType });
-            } else if (fileData instanceof Blob || fileData instanceof File) {
-                blob = fileData;
-            } else {
-                blob = new Blob([fileData], { type: mediaType });
-            }
-            formData.append('file', blob, fileName);
-
-            // Node.js 环境使用 node-fetch 或 axios
-            let response;
-            if (typeof fetch !== 'undefined') {
-                // 浏览器环境
-                response = await fetch(serverUrl, {
-                    method: 'POST',
-                    body: formData
-                });
-            } else {
-                // Node.js 环境，需要动态导入 node-fetch
-                const { default: fetch } = await import('node-fetch');
-                const FormData = (await import('form-data')).default;
-                const nodeFormData = new FormData();
-                nodeFormData.append('token', token);
-                nodeFormData.append('key', key);
-                nodeFormData.append('file', fileData, { filename: fileName, contentType: mediaType });
-                
-                response = await fetch(serverUrl, {
-                    method: 'POST',
-                    body: nodeFormData
-                });
-            }
+            const response = await fetch(serverUrl, {
+                method: 'POST',
+                body: nodeFormData
+            });
 
             if (response.ok || response.status === 200) {
                 return new IMResult(0, 'success', presignedUrl.downloadUrl);
@@ -510,7 +628,6 @@ export class RobotServiceClient {
 
     /**
      * 上传到通用存储（S3/OSS等）
-     * 使用HTTP PUT直接上传
      * @param {OutputPresignedUploadUrl} presignedUrl - 预签名URL信息
      * @param {Buffer|Blob|File} fileData - 文件数据
      * @param {string} mediaType - 媒体类型
@@ -528,26 +645,17 @@ export class RobotServiceClient {
                 body = Buffer.from(fileData);
             }
 
+            // Node.js 环境使用 node-fetch
+            const { default: fetch } = await import('node-fetch');
+            
             // 使用主上传URL
-            let response;
-            if (typeof fetch !== 'undefined') {
-                response = await fetch(presignedUrl.uploadUrl, {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': mediaType
-                    },
-                    body: body
-                });
-            } else {
-                const { default: fetch } = await import('node-fetch');
-                response = await fetch(presignedUrl.uploadUrl, {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': mediaType
-                    },
-                    body: body
-                });
-            }
+            let response = await fetch(presignedUrl.uploadUrl, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': mediaType
+                },
+                body: body
+            });
 
             if (response.ok || (response.status >= 200 && response.status < 300)) {
                 return new IMResult(0, 'success', presignedUrl.downloadUrl);
@@ -555,24 +663,13 @@ export class RobotServiceClient {
 
             // 主URL失败，尝试备用URL
             if (presignedUrl.backupUploadUrl) {
-                if (typeof fetch !== 'undefined') {
-                    response = await fetch(presignedUrl.backupUploadUrl, {
-                        method: 'PUT',
-                        headers: {
-                            'Content-Type': mediaType
-                        },
-                        body: body
-                    });
-                } else {
-                    const { default: fetch } = await import('node-fetch');
-                    response = await fetch(presignedUrl.backupUploadUrl, {
-                        method: 'PUT',
-                        headers: {
-                            'Content-Type': mediaType
-                        },
-                        body: body
-                    });
-                }
+                response = await fetch(presignedUrl.backupUploadUrl, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': mediaType
+                    },
+                    body: body
+                });
 
                 if (response.ok || (response.status >= 200 && response.status < 300)) {
                     return new IMResult(0, 'success', presignedUrl.downloadUrl);
@@ -644,5 +741,25 @@ export class OutputPresignedUploadUrl {
         this.backupUploadUrl = data.backupUploadUrl || '';
         /** 下载URL */
         this.downloadUrl = data.downloadUrl || '';
+    }
+}
+
+/**
+ * MediaEntry 媒体条目（朋友圈用）
+ */
+export class MediaEntry {
+    constructor(data = {}) {
+        /** 媒体类型 */
+        this.type = data.type || 0;
+        /** 媒体URL */
+        this.url = data.url || '';
+        /** 缩略图URL */
+        this.thumbUrl = data.thumbUrl || '';
+        /** 宽度 */
+        this.width = data.width || 0;
+        /** 高度 */
+        this.height = data.height || 0;
+        /** 时长（视频/音频） */
+        this.duration = data.duration || 0;
     }
 }

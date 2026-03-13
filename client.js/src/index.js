@@ -1,5 +1,5 @@
 // ==================== 核心客户端类 ====================
-export { RobotServiceClient, OutputPresignedUploadUrl } from './RobotServiceClient.js';
+export { RobotServiceClient, OutputPresignedUploadUrl, MediaEntry } from './RobotServiceClient.js';
 export { ConnectionManager } from './ConnectionManager.js';
 export { RobotGatewayClient } from './RobotGatewayClient.js';
 

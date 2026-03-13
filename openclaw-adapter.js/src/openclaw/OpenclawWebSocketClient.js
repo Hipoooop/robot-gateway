@@ -5,23 +5,28 @@ import {
     ChatSendParams,
     Attachment
 } from './protocol/OpenclawProtocol.js';
+import { SessionContextManager } from '../session/SessionContextManager.js';
 
 const MESSAGE_CONTEXT_TIMEOUT_MS = 5 * 60 * 1000; // 5分钟超时
+
+// 类级别的静态变量，与 Java 版本的 static ConcurrentHashMap 对齐
+// 用于在多个客户端实例之间共享消息上下文
+const messageContexts = new Map();
 
 /**
  * Openclaw Gateway WebSocket 客户端
  * 负责与 Openclaw Gateway 的 WebSocket 通信
  */
 export class OpenclawWebSocketClient {
-    constructor(config, messageHandler) {
+    constructor(config, messageHandler, sessionContextManager = null) {
         this.config = config;
         this.messageHandler = messageHandler;
+        this.sessionContextManager = sessionContextManager;
         
         this.ws = null;
         this.isAuthenticated = false;
         this.lastHeartbeatTime = 0;
         this.pendingRequests = new Map();
-        this.messageContexts = new Map();
         this.heartbeatTimer = null;
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 10;
@@ -153,7 +158,14 @@ export class OpenclawWebSocketClient {
     sendConnectRequest(resolveConnect, rejectConnect) {
         const requestId = generateUUID();
         const params = new ConnectParams();
-        params.setAuth(this.config.gateway.token);
+        
+        // 设置认证token
+        if (this.config.gateway.token) {
+            params.setAuth(this.config.gateway.token);
+        }
+        
+        // 设置 scopes（与 Java 版本对齐）
+        params.scopes = ['operator.read', 'operator.write'];
 
         const request = new RequestMessage(requestId, 'connect', params);
 
@@ -226,13 +238,36 @@ export class OpenclawWebSocketClient {
             // 从响应中提取 runId 并保存上下文
             if (json.payload && json.payload.runId) {
                 const runId = json.payload.runId;
-                this.messageContexts.set(runId, {
-                    senderId: pendingRequest.senderId,
-                    threadId: pendingRequest.threadId,
-                    isGroup: pendingRequest.isGroup,
-                    timestamp: Date.now()
-                });
-    
+                
+                // 保存或更新消息上下文
+                const existingContext = messageContexts.get(runId);
+                if (existingContext) {
+                    existingContext.refreshTimestamp();
+                } else {
+                    messageContexts.set(runId, {
+                        senderId: pendingRequest.senderId,
+                        threadId: pendingRequest.threadId,
+                        isGroup: pendingRequest.isGroup,
+                        timestamp: Date.now(),
+                        lastText: '',
+                        refreshTimestamp() {
+                            this.timestamp = Date.now();
+                        }
+                    });
+                }
+                
+                // 同时注册到 session 上下文管理器（用于 cron 任务等异步消息）
+                if (this.sessionContextManager && pendingRequest.senderId) {
+                    this.sessionContextManager.associateRunId(runId, SessionContextManager.DEFAULT_SESSION_KEY);
+                    this.sessionContextManager.registerSession(
+                        SessionContextManager.DEFAULT_SESSION_KEY,
+                        pendingRequest.senderId,
+                        pendingRequest.threadId,
+                        pendingRequest.isGroup
+                    );
+                }
+                
+                console.debug(`Saved message context for runId=${runId}, sender=${pendingRequest.senderId}`);
             }
         }
     }
@@ -246,6 +281,7 @@ export class OpenclawWebSocketClient {
             return;
         }
 
+        console.debug('Received Openclaw message:', msg);
         switch (msg.type) {
             case 'response':
                 if (this.messageHandler) {
@@ -274,30 +310,79 @@ export class OpenclawWebSocketClient {
     handleAgentEvent(json) {
         if (!json.payload) return;
 
+        console.debug('Received agent event:', json);
         const payload = json.payload;
         const runId = payload.runId || '';
         const stream = payload.stream || '';
 
         let startCommand = false;
+        let endCommand = false;
         if (stream === 'lifecycle' && payload.data) {
             if (payload.data.phase === 'start') {
                 startCommand = true;
+            } else if (payload.data.phase === 'end') {
+                endCommand = true;
             }
         }
 
-        // 只处理 assistant 流
-        if (stream !== 'assistant' && !startCommand) {
+        // 只处理 assistant 流 或 lifecycle 的 start/end
+        if (stream !== 'assistant' && !startCommand && !endCommand) {
             return;
         }
 
         const data = payload.data || {};
-        const text = data.text || '';
+        let text = data.text || '';
 
-        // 查找消息上下文
-        const context = this.messageContexts.get(runId);
+        // 查找消息上下文（优先从 runId 映射，其次从 session 上下文管理器）
+        let context = messageContexts.get(runId);
+        
+        // 如果没有找到上下文，尝试从 session 上下文管理器获取（用于 cron 任务等异步消息）
+        if (!context && this.sessionContextManager) {
+            let sessionContext = this.sessionContextManager.getContextByRunId(runId);
+            if (!sessionContext) {
+                // 尝试获取默认 session 上下文
+                sessionContext = this.sessionContextManager.getDefaultSessionContext();
+            }
+            
+            if (sessionContext) {
+                context = {
+                    senderId: sessionContext.getSenderId(),
+                    threadId: sessionContext.getThreadId(),
+                    isGroup: sessionContext.isGroup(),
+                    timestamp: Date.now(),
+                    lastText: '',
+                    refreshTimestamp() {
+                        this.timestamp = Date.now();
+                    }
+                };
+                messageContexts.set(runId, context);
+                console.debug(`Resolved context from session manager for runId=${runId}, sender=${sessionContext.getSenderId()}`);
+            }
+        }
+
         if (!context) {
+            console.debug(`No context found for runId=${runId}, skipping agent event`);
+            // 清理可能存在的孤立 pendingRequests
+            for (const [requestId, pending] of this.pendingRequests) {
+                if (pending.method === 'chat.send' && pending.threadId === runId) {
+                    console.debug(`Removing orphaned pending request for runId=${runId}`);
+                    this.pendingRequests.delete(requestId);
+                }
+            }
             return;
         }
+
+        // 在 end 命令时使用缓存的文本（对齐 Java 版本的 StringUtils.isEmpty 检查）
+        if ((!text || text === '') && endCommand) {
+            text = context.lastText || '';
+        }
+
+        // 缓存非空文本（用于 end 时恢复）
+        if (text && !endCommand) {
+            context.lastText = text;
+        }
+
+        console.debug(`Agent event: runId=${runId}, text=${text.substring(0, Math.min(50, text.length))}, sender=${context.senderId}`);
 
         // 构建流式消息
         const response = {
@@ -310,13 +395,18 @@ export class OpenclawWebSocketClient {
                 text: text,
                 extra: {
                     streamId: runId,
-                    state: startCommand ? 'start' : 'generating'
+                    state: startCommand ? 'start' : (endCommand ? 'completed' : 'generating')
                 }
             }
         };
 
         if (this.messageHandler) {
             this.messageHandler.onResponse(response);
+        }
+
+        // end 命令时清理上下文
+        if (endCommand) {
+            messageContexts.delete(runId);
         }
     }
 
@@ -344,53 +434,82 @@ export class OpenclawWebSocketClient {
             }
         }
 
-        // 查找消息上下文
-        const context = this.messageContexts.get(runId);
+        console.debug(`Chat event: state=${state}, runId=${runId}, text=${messageText ? messageText.substring(0, Math.min(50, messageText.length)) : 'null'}`);
 
-        if (state === 'final') {
-            if (messageText) {
-                const response = {
-                    type: 'response',
-                    channel: context ? {
-                        peerId: context.senderId,
-                        threadId: context.threadId
-                    } : {},
-                    message: {
-                        text: messageText,
-                        extra: {
-                            streamId: runId,
-                            state: 'completed'
-                        }
+        // 查找消息上下文（优先从 runId 映射，其次从 session 上下文管理器）
+        let context = messageContexts.get(runId);
+        
+        // 如果没有找到上下文，尝试从 session 上下文管理器获取（用于 cron 任务等异步消息）
+        if (!context && this.sessionContextManager) {
+            let sessionContext = this.sessionContextManager.getContextByRunId(runId);
+            if (!sessionContext) {
+                // 尝试获取默认 session 上下文
+                sessionContext = this.sessionContextManager.getDefaultSessionContext();
+            }
+            
+            if (sessionContext) {
+                context = {
+                    senderId: sessionContext.getSenderId(),
+                    threadId: sessionContext.getThreadId(),
+                    isGroup: sessionContext.isGroup(),
+                    timestamp: Date.now(),
+                    lastText: '',
+                    refreshTimestamp() {
+                        this.timestamp = Date.now();
                     }
                 };
-
-                if (this.messageHandler) {
-                    this.messageHandler.onResponse(response);
-                }
+                messageContexts.set(runId, context);
+                console.debug(`Resolved context from session manager for runId=${runId}, sender=${sessionContext.getSenderId()}`);
             }
+        }
 
+        // 根据状态处理
+        if (state === 'final') {
+            // final状态不再处理，放到lifecycle的end处理
+            
             // 清理上下文
-            this.messageContexts.delete(runId);
+            messageContexts.delete(runId);
         } else if (state === 'error') {
             const errorMessage = payload.errorMessage || 'Unknown error';
             console.error('Chat event error:', errorMessage);
             if (this.messageHandler) {
                 this.messageHandler.onError(errorMessage);
             }
-            this.messageContexts.delete(runId);
+            messageContexts.delete(runId);
         }
     }
 
     /**
-     * 发送消息到 Openclaw Gateway
+     * 发送消息到 Openclaw Gateway（无 senderId 版本）
      */
-    sendMessage(message, senderId) {
+    sendMessage(message) {
+        this.sendMessageWithSender(message, null);
+    }
+
+    /**
+     * 发送消息到 Openclaw Gateway（带 senderId 版本）
+     * @param {Object} message - 消息对象
+     * @param {string} senderId - 原始发送者ID（可选）
+     */
+    sendMessageWithSender(message, senderId) {
         if (!this.isAuthenticated) {
             console.warn('Not authenticated, cannot send message');
             return;
         }
 
         try {
+            // 注册 session 上下文（用于 cron 任务等异步消息的回复）
+            if (this.sessionContextManager && senderId) {
+                const threadId = message.channel ? message.channel.threadId : senderId;
+                const isGroup = message.channel && message.channel.isGroup;
+                this.sessionContextManager.registerSession(
+                    SessionContextManager.DEFAULT_SESSION_KEY,
+                    senderId,
+                    threadId,
+                    isGroup
+                );
+            }
+
             const requestId = generateUUID();
             const chatParams = new ChatSendParams();
             chatParams.sessionKey = 'main';
@@ -398,26 +517,28 @@ export class OpenclawWebSocketClient {
             chatParams.idempotencyKey = generateUUID();
 
             // 添加附件（如果有媒体）
-            if (message.message.mediaUrl) {
+            if (message.message && message.message.mediaUrl) {
                 chatParams.setAttachments([new Attachment(
                     message.message.mediaType,
                     message.message.mediaUrl
                 )]);
+                console.debug(`Adding attachment to message: type=${message.message.mediaType}, url=${message.message.mediaUrl}`);
             }
 
             const request = new RequestMessage(requestId, 'chat.send', chatParams);
             this.send(JSON.stringify(request));
-
-
+            
+            console.info(`Sent chat.send request: text=${message.message.text ? message.message.text.substring(0, Math.min(50, message.message.text.length)) : 'null'}, sender=${senderId}`);
 
             // 记录待处理的请求
-            this.pendingRequests.set(requestId, {
+            const pendingReq = {
                 method: 'chat.send',
                 senderId: senderId,
-                threadId: message.channel.threadId,
-                isGroup: message.channel.isGroup,
+                threadId: message.channel ? message.channel.threadId : '',
+                isGroup: message.channel ? message.channel.isGroup : false,
                 timestamp: Date.now()
-            });
+            };
+            this.pendingRequests.set(requestId, pendingReq);
 
         } catch (error) {
             console.error('Failed to send message to Openclaw:', error.message);
@@ -447,18 +568,15 @@ export class OpenclawWebSocketClient {
                     this.ws.ping();
                     this.lastHeartbeatTime = Date.now();
                     console.debug('[Openclaw] Ping sent');
-                } else if (!this.isAuthenticated) {
-                    // 未认证状态，停止心跳并触发重连
-                    console.debug('[Openclaw] Not authenticated, stopping heartbeat');
-                    this.stopHeartbeat();
-                    return;
                 }
                 // 清理超时的消息上下文
                 this.cleanupExpiredMessageContexts();
+                // 清理过期的session上下文
+                if (this.sessionContextManager) {
+                    this.sessionContextManager.cleanupExpiredSessions(MESSAGE_CONTEXT_TIMEOUT_MS);
+                }
             } catch (error) {
                 console.error('[Openclaw] Heartbeat error:', error.message);
-                // 心跳失败时关闭连接，触发重连
-                this.closeConnection();
             }
         }, this.config.gateway.heartbeatInterval);
 
@@ -470,10 +588,15 @@ export class OpenclawWebSocketClient {
      */
     cleanupExpiredMessageContexts() {
         const now = Date.now();
-        for (const [runId, context] of this.messageContexts) {
+        let removedCount = 0;
+        for (const [runId, context] of messageContexts) {
             if (now - context.timestamp > MESSAGE_CONTEXT_TIMEOUT_MS) {
-                this.messageContexts.delete(runId);
+                messageContexts.delete(runId);
+                removedCount++;
             }
+        }
+        if (removedCount > 0) {
+            console.debug(`Cleaned up ${removedCount} expired message contexts`);
         }
     }
 
@@ -545,13 +668,6 @@ export class OpenclawWebSocketClient {
 
     /**
      * 关闭连接
-     * 
-     * 安全关闭流程：
-     * 1. 停止心跳
-     * 2. 标记未认证（阻止后续消息处理）
-     * 3. 清理事件处理器（防止断开事件传播）
-     * 4. 关闭 WebSocket
-     * 5. 清理引用
      */
     closeConnection() {
         this.stopHeartbeat();

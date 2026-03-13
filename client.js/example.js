@@ -73,7 +73,7 @@ async function handleIncomingMessage(data) {
         };
         
         try {
-            const result = await client.sendMessage(ROBOT_ID, conv, replyPayload);
+            const result = await client.sendMessage(conv, replyPayload);
             if (result.isSuccess()) {
                 console.log('  ✅ 自动回复成功');
             } else {
@@ -103,7 +103,7 @@ async function processCommand(command, args) {
                 searchableContent: message
             };
             
-            const result = await client.sendMessage(ROBOT_ID, conversation, payload);
+            const result = await client.sendMessage(conversation, payload);
             if (result.isSuccess()) {
                 console.log(`✅ 消息已发送给 ${userId}`);
             } else {
@@ -157,7 +157,8 @@ async function processCommand(command, args) {
                 alias: ''
             }));
             
-            const result = await client.createGroup(groupInfo, memberList);
+            // 使用简化参数创建群组（to, lines, payload 可选）
+            const result = await client.createGroup(groupInfo, memberList, null, [0], null);
             if (result.isSuccess()) {
                 console.log('✅ 群组创建成功:', result.getResult());
             } else {
@@ -215,7 +216,7 @@ async function processCommand(command, args) {
                             remoteMediaUrl: result.result
                         };
                         
-                        const sendResult = await client.sendMessage(ROBOT_ID, conversation, payload);
+                        const sendResult = await client.sendMessage(conversation, payload);
                         if (sendResult.isSuccess()) {
                             console.log(`✅ ${isImage ? '图片' : '文件'}消息已发送给 ${targetUserId}`);
                         } else {
@@ -279,7 +280,7 @@ async function processCommand(command, args) {
                             remoteMediaUrl: result.result
                         };
                         
-                        const sendResult = await client.sendMessage(ROBOT_ID, conversation, payload);
+                        const sendResult = await client.sendMessage(conversation, payload);
                         if (sendResult.isSuccess()) {
                             console.log(`✅ ${isVideo ? '视频' : '文件'}消息已发送给 ${targetUserId}`);
                         } else {

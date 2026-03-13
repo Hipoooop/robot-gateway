@@ -3,6 +3,7 @@ import { OpenclawWebSocketClient } from '../openclaw/OpenclawWebSocketClient.js'
 import { MessageConverter } from '../converter/MessageConverter.js';
 import { WhitelistFilter } from '../filter/WhitelistFilter.js';
 import { GroupFilter } from '../filter/GroupFilter.js';
+import { SessionContextManager } from '../session/SessionContextManager.js';
 
 /**
  * Openclaw 桥接器
@@ -20,6 +21,7 @@ export class OpenclawBridge {
         this.messageConverter = new MessageConverter();
         this.whitelistFilter = new WhitelistFilter(config.openclaw);
         this.groupFilter = new GroupFilter(config.openclaw);
+        this.sessionContextManager = new SessionContextManager();
         
         // 去重：记录已处理完成的 runId，防止重复发送（在 Bridge 级别持久化，不受客户端重连影响）
         this.completedRunIds = new Map();
@@ -96,7 +98,8 @@ export class OpenclawBridge {
             console.log(`Connecting to Openclaw Gateway: ${this.config.openclaw.gateway.url}`);
             this.openclawClient = new OpenclawWebSocketClient(
                 this.config.openclaw,
-                this.openclawMessageHandler
+                this.openclawMessageHandler,
+                this.sessionContextManager
             );
 
             await this.openclawClient.connect();
@@ -218,7 +221,7 @@ export class OpenclawBridge {
                 console.warn('Sender ID is null or empty, skipping message');
                 return;
             }
-            this.openclawClient.sendMessage(openclawMessage, senderId);
+            this.openclawClient.sendMessageWithSender(openclawMessage, senderId);
 
         } catch (error) {
             console.error('Error processing Wildfire message:', error.message);
@@ -289,6 +292,7 @@ export class OpenclawBridge {
             return;
         }
 
+        console.log('Received response from Openclaw:', response);
         try {
             const streamId = response.message?.extra?.streamId;
             const state = response.message?.extra?.state;
@@ -312,7 +316,6 @@ export class OpenclawBridge {
 
             // 2. 通过野火SDK发送消息
             const result = await this.wildfireClient.sendMessage(
-                this.config.wildfire.gateway.robotId,
                 wfMessage.conversation,
                 wfMessage.payload
             );
