@@ -245,12 +245,8 @@ export class RobotGatewayClient {
     startHeartbeat() {
         this.heartbeatTimer = setInterval(() => {
             if (this.authenticated) {
-                const heartbeat = {
-                    type: 'heartbeat',
-                    timestamp: Date.now()
-                };
                 try {
-                    this.send(JSON.stringify(heartbeat));
+                    this.sendRequest('heartbeat');
                 } catch (error) {
                     console.error('Failed to send heartbeat:', error.message);
                 }
