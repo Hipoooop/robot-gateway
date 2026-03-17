@@ -79,8 +79,13 @@ export class RobotServiceClient {
         }
 
         try {
-            const response = await client.sendRequest(method, params);
-            return new IMResult(response.code, response.msg, response.result);
+            const responseMessage = await client.sendRequest(method, params);
+            if(responseMessage.isSuccess()){
+                const response = responseMessage.result;
+                return new IMResult(response.code, response.msg, response.result);
+            } else {
+                return new IMResult(responseMessage.code, responseMessage.msg, null);
+            }
         } catch (error) {
             return new IMResult(-1, error.message, null);
         }
