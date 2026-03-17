@@ -23,14 +23,19 @@ openclaw restart
 ```json
 {
   "channels": {
-    "wildfire": {
-      "enabled": true,
-      "gatewayUrl": "ws://localhost:8884/robot/gateway",
-      "robotId": "your-robot-id",
-      "robotSecret": "your-robot-secret",
-      "requireMention": true,
-      "helpKeywords": "帮,请,分析,总结"
-    }
+      "wildfire": {
+          "enabled": true,
+          "accounts": {
+            "default": {
+              "enabled": true,
+              "gatewayUrl": "ws://your_gateway_host:8884/robot/gateway",
+              "robotId": "your robot id",
+              "robotSecret": "your robot secret",
+              "requireMention": true,
+              "helpKeywords": "帮,请,分析,总结"
+            }
+          }
+      },
   }
 }
 ```
