@@ -1,0 +1,53 @@
+{
+  "name": "@openclaw/wildfire",
+  "version": "1.0.0",
+  "description": "OpenClaw Wildfire IM Channel Plugin",
+  "type": "channel",
+  "main": "dist/server.js",
+  "bin": {
+    "openclaw-wf": "bin/cli.js"
+  },
+  "config": {
+    "schema": {
+      "url": {
+        "type": "string",
+        "description": "Plugin HTTP server URL",
+        "default": "http://localhost:18080"
+      },
+      "auth_token": {
+        "type": "string",
+        "description": "Authentication token for OpenClaw to call plugin",
+        "required": true
+      },
+      "webhook_url": {
+        "type": "string",
+        "description": "OpenClaw webhook URL to receive messages",
+        "default": ""
+      }
+    }
+  },
+  "capabilities": {
+    "send_text": true,
+    "send_file": true,
+    "receive_webhook": true,
+    "receive_polling": false
+  },
+  "install": {
+    "post_install": "bin/install.js",
+    "config_template": "config.template.json"
+  },
+  "scripts": {
+    "start": "node bin/cli.js start",
+    "status": "node bin/cli.js status",
+    "stop": "node bin/cli.js stop"
+  },
+  "author": "Wildfire IM Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wildfirechat/openclaw-plugin-js"
+  },
+  "peerDependencies": {
+    "openclaw": ">=1.0.0"
+  }
+}
