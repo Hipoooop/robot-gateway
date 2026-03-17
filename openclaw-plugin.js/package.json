@@ -6,7 +6,7 @@
   "author": "Wildfire IM Team",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/wildfirechat/openclaw-plugin-js.git"
+    "url": "git+https://github.com/wildfirechat/robot-gateway.git"
   },
   "type": "module",
   "main": "./dist/index.js",
@@ -38,7 +38,7 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@wildfirechat/robot-gateway-client-sdk": "^1.0.2",
+    "@wildfirechat/robot-gateway-client-sdk": "^1.0.3",
     "@wildfirechat/server-sdk": "^1.0.0"
   },
   "peerDependencies": {
