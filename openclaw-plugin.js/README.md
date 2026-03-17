@@ -12,7 +12,10 @@ npm run build
 npm pack
 
 # 安装到 OpenClaw
-openclaw plugins install ./openclaw-wildfire-1.0.0.tgz
+// for dev
+//openclaw plugins install ./openclaw-wildfire-1.0.0.tgz
+// for prd
+openclaw plugins install @wildfirechat/openclaw-plugin
 openclaw restart
 ```
 
