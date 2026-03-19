@@ -173,11 +173,9 @@ export async function handleIncomingMessage(
       ctx: ctxPayload,
       cfg,
       dispatcherOptions: {
-        deliver: async (payload: { text?: string }) => {
-          // deliver 接收最终完整内容
-          if (payload.text) {
-            finalText = payload.text;
-          }
+        // deliver is called once per block (paragraph) with that block's text only — NOT cumulative.
+        deliver: async (_payload: { text?: string }) => {
+          // no-op: streaming delivery is handled via onPartialReply + sendStreamingReply
         },
         onError: (err: unknown, info: { kind?: string }) => {
           api.logger?.error?.(`[wildfire] ${info?.kind || "reply"} failed: ${String(err)}`);
