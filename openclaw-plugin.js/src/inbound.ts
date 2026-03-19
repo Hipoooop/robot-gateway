@@ -24,6 +24,8 @@ const CONV_TYPE_SINGLE = 0;
 const CONV_TYPE_GROUP = 1;
 const CONV_TYPE_CHANNEL = 2;
 
+// Per-session serialization: only one AI request per session may be in-flight at a time.
+const sessionQueues = new Map<string, Promise<void>>();
 /**
  * Process incoming message from Wildfire IM
  */
@@ -63,7 +65,7 @@ export async function handleIncomingMessage(
 
   const baseSessionKey = isGroup
     ? `wildfire:group:${conv.target}`.toLowerCase()
-    : `wildfire:${sender}`.toLowerCase();
+    : `wildfire:user:${sender}`.toLowerCase();
 
   const cfg = api.config;
 
@@ -77,6 +79,15 @@ export async function handleIncomingMessage(
 
   const sessionKey = String(route?.sessionKey ?? baseSessionKey).trim() || baseSessionKey;
 
+  // Wait for any in-flight request on this session to finish before starting a new one.
+  const prevRequest = sessionQueues.get(sessionKey) ?? Promise.resolve();
+  let releaseSession!: () => void;
+  const sessionSlot = new Promise<void>(resolve => { releaseSession = resolve; });
+  sessionQueues.set(sessionKey, sessionSlot);
+  await prevRequest.catch(() => {});
+
+  try {
+
   const storePath =
     runtime.channel.session?.resolveStorePath?.(cfg?.session?.store, {
       agentId: route.agentId,
@@ -84,26 +95,28 @@ export async function handleIncomingMessage(
 
   const chatType = isGroup ? "group" : "direct";
   const fromLabel = String(sender);
+  const conversationLabel = isGroup ? `group:${conv.target}` : `user:${sender}`;
   const senderId = String(sender);
   const timestamp = Date.now();
 
   const ctxPayload = {
     Body: text,
     RawBody: text,
-    From: `wildfire:user:${sender}`,
+    From: isGroup ? `wildfire:group:${conv.target}` : `wildfire:user:${sender}`,
     To: isGroup ? `wildfire:group:${conv.target}` : `wildfire:user:${sender}`,
     SessionKey: sessionKey,
     AccountId: "default",
     ChatType: chatType,
-    ConversationLabel: fromLabel,
+    ConversationLabel: conversationLabel,
     SenderName: fromLabel,
     SenderId: senderId,
     Provider: "wildfire",
     Surface: "wildfire",
-    MessageSid: `wildfire-${Date.now()}`,
+    // Use real message ID when available; fall back to timestamp+random to avoid same-ms collisions
+    MessageSid: `wildfire-${(data.messageId ?? data.msgId ?? data.mid) || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`}`,
     Timestamp: timestamp,
     OriginatingChannel: "wildfire",
-    OriginatingTo: `wildfire:${config.robotId || "bot"}`,
+    OriginatingTo: `wildfire:user:${sender}`,
     CommandAuthorized: true,
     _wildfire: {
       accountId: "default",
@@ -124,7 +137,7 @@ export async function handleIncomingMessage(
         ? {
             sessionKey,
             channel: "wildfire",
-            to: senderId,
+            to: `wildfire:user:${senderId}`,
             accountId: "default",
           }
         : undefined,
@@ -145,13 +158,11 @@ export async function handleIncomingMessage(
   // 生成唯一的 streamId 用于流式消息（每条用户消息有独立的流）
   const streamId = `stream-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   let finalText = "";
-  let hasStarted = false;
   let hasCompleted = false;
 
   // 先发送一个空的 generating 消息显示转圈等待
   try {
     await sendStreamingReply(sender, conv, "...", streamId, "generating", api);
-    hasStarted = true;
   } catch (e: any) {
     api.logger?.error?.(`[wildfire] initial stream failed: ${e.message}`);
   }
@@ -209,6 +220,13 @@ export async function handleIncomingMessage(
       await sendStreamingReply(sender, conv, errorText, streamId, "completed", api);
     } catch {
       // ignore secondary send errors
+    }
+  }
+
+  } finally {
+    releaseSession();
+    if (sessionQueues.get(sessionKey) === sessionSlot) {
+      sessionQueues.delete(sessionKey);
     }
   }
 }

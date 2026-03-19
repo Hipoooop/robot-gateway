@@ -1,6 +1,6 @@
 {
   "name": "@wildfirechat/openclaw-plugin",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Wildfire IM channel plugin for OpenClaw",
   "license": "MIT",
   "author": "Wildfire IM Team",

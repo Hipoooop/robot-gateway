@@ -14,7 +14,7 @@ export function shouldRespondToGroupMessage(
 ): boolean {
   // Strategy 1: Check if mentioned
   if (config.requireMention !== false) {
-    if (isMentioned(messageData)) {
+    if (isMentioned(messageData, config.robotId)) {
       return true;
     }
   }
@@ -48,7 +48,7 @@ export function shouldRespondToGroupMessage(
  * - mentionedType === 1: @部分人，检查 mentionedTargets 是否包含机器人 ID
  * - mentionedType === 0 或不存在: 未被提及
  */
-function isMentioned(messageData: any): boolean {
+function isMentioned(messageData: any, robotId?: string): boolean {
   try {
     const payload = messageData.payload;
     if (!payload) return false;
@@ -62,31 +62,14 @@ function isMentioned(messageData: any): boolean {
     
     // mentionedType === 1: @部分人，检查 mentionedTargets
     if (mentionedType === 1) {
-      const mentionedTargets = payload.mentionedTargets;
+      const mentionedTargets = payload.mentionedTarget;
       if (Array.isArray(mentionedTargets) && mentionedTargets.length > 0) {
-        // 获取机器人 ID（从 messageData 的 target 或 sender 推断）
-        // 机器人通常不是 sender，所以这里只需要检查是否有任何 mention
-        // 实际上，如果 mentionedTargets 不为空，说明有人被 @ 了
-        // 但为了精确匹配，我们需要知道机器人自己的 ID
-        // 简化处理：只要有部分人被 @，就认为机器人可能需要响应
-        // 或者可以通过配置来指定机器人 ID
+        // Only respond if the bot itself is mentioned; ignore @-mentions of other users
+        if (robotId) {
+          return mentionedTargets.includes(robotId);
+        }
+        // robotId unknown: fall back to responding to any @-mention
         return true;
-      }
-    }
-    
-    // 尝试从 extra 字段解析（旧格式兼容）
-    const extra = payload.extra;
-    if (extra && typeof extra === "string") {
-      try {
-        const extraData = JSON.parse(extra);
-        if (extraData.mentionedType === 2) {
-          return true;
-        }
-        if (extraData.mentionedType === 1 && Array.isArray(extraData.mentionedTargets)) {
-          return extraData.mentionedTargets.length > 0;
-        }
-      } catch {
-        // JSON 解析失败，忽略
       }
     }
     
