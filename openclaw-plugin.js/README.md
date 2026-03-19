@@ -1,9 +1,13 @@
-# OpenClaw Wildfire IM 插件
+# OpenClaw 野火IM 插件
 
-OpenClaw 的野火 IM (Wildfire IM) 频道插件，支持收发消息、流式回复和文件传输。
+OpenClaw 的野火IM 频道插件，支持收发消息、流式回复和文件传输。
 
 ## 安装
+```
+openclaw plugins install @wildfirechat/openclaw-plugin
+```
 
+## 开发
 ```bash
 # 构建并打包
 cd openclaw-plugin.js
@@ -12,10 +16,8 @@ npm run build
 npm pack
 
 # 安装到 OpenClaw
-// for dev
-//openclaw plugins install ./openclaw-wildfire-1.0.0.tgz
-// for prd
-openclaw plugins install @wildfirechat/openclaw-plugin
+// 安装完之后，代码位于 ~/.openclaw/extensions/wildfire/，后续可以直接将 npm run build 后的 dist 目录里面的内容 覆盖到安装目录下的 dist 目录
+openclaw plugins install ./openclaw-wildfire-1.0.0.tgz
 openclaw restart
 ```
 
@@ -87,7 +89,7 @@ openclaw-plugin.js/
 ### Mention 检测
 
 - `mentionedType === 2`: @所有人，始终回复
-- `mentionedType === 1`: @部分人，检查 `mentionedTargets`
+- `mentionedType === 1`: @部分人，检查 `mentionedTarget`
 
 ## 调试
 
