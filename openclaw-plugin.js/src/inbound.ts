@@ -68,13 +68,16 @@ export async function handleIncomingMessage(
     : `wildfire:user:${sender}`.toLowerCase();
 
   const cfg = api.config;
+  const routePeer = isGroup
+    ? { kind: "group" as const, id: String(conv.target) }
+    : { kind: "direct" as const, id: String(sender) };
 
   const route =
     runtime.channel.routing?.resolveAgentRoute?.({
       cfg,
-      sessionKey: baseSessionKey,
       channel: "wildfire",
       accountId: "default",
+      peer: routePeer,
     }) ?? { agentId: "main", sessionKey: baseSessionKey };
 
   const sessionKey = String(route?.sessionKey ?? baseSessionKey).trim() || baseSessionKey;

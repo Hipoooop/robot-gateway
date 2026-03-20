@@ -31,7 +31,7 @@ openclaw restart
       "wildfire": {
           "enabled": true,
           "accounts": {
-            "default": {
+              "default": {
               "enabled": true,
               "gatewayUrl": "ws://your_gateway_host:8884/robot/gateway",
               "robotId": "your robot id",
