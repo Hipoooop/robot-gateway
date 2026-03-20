@@ -6,6 +6,7 @@ import type { WildfireConfig } from "./config.js";
 // @ts-ignore - runtime may not be fully typed
 import { shouldRespondToGroupMessage } from "./utils.js";
 import { getClient } from "./clients.js";
+import { WhitelistFilter } from "./whitelist.js";
 import {
   TextMessageContent,
   StreamingTextGeneratingMessageContent,
@@ -60,6 +61,20 @@ export async function handleIncomingMessage(
 
   // Check if should respond (group filtering)
   if (isGroup && !shouldRespondToGroupMessage(text, data, config)) {
+    return;
+  }
+
+  // Check whitelist
+  const whitelistFilter = new WhitelistFilter(config);
+  if (!whitelistFilter.shouldProcess(String(sender), String(conv.target), isGroup)) {
+    api.logger?.info?.(`[wildfire] message from ${sender} blocked by whitelist`);
+    // Send denied message
+    try {
+      const deniedMessage = config.whiteList?.deniedMessage || "不允许使用";
+      await sendDirectReply(sender, conv, deniedMessage, api);
+    } catch (e: any) {
+      api.logger?.error?.(`[wildfire] failed to send denied message: ${e.message}`);
+    }
     return;
   }
 
@@ -355,5 +370,46 @@ function extractTextContent(payload: any): string {
       return `[文件] ${payload.searchableContent || ""}`;
     default:
       return `[消息类型:${payload.type}]`;
+  }
+}
+
+/**
+ * Send direct reply back to Wildfire IM (for whitelist rejection, etc.)
+ */
+async function sendDirectReply(
+  sender: string,
+  conv: { type: number; target: string; line: number },
+  text: string,
+  api?: any
+): Promise<void> {
+  api?.logger?.debug?.(`[wildfire-debug] sendDirectReply called, text=${text?.substring(0, 30)}`);
+  const client = getClient();
+  if (!client) {
+    api?.logger?.error?.("[wildfire-debug] client not connected");
+    throw new Error("Wildfire client not connected");
+  }
+
+  const conversation: Conversation = {
+    type: conv.type,
+    target: conv.type === 0 ? sender : conv.target,
+    line: conv.line,
+  };
+
+  api?.logger?.debug?.(`[wildfire-debug] sendDirectReply conversation: type=${conv.type}, target=${conversation.target}, line=${conv.line}`);
+
+  const content = new TextMessageContent();
+  content.content = text;
+
+  try {
+    const result = await client.sendMessage(conversation, content.encode());
+    api?.logger?.debug?.(`[wildfire-debug] sendDirectReply result: success=${result.isSuccess()}, msg=${result.getMsg()}`);
+    
+    if (!result.isSuccess()) {
+      throw new Error(result.getMsg());
+    }
+    api?.logger?.debug?.(`[wildfire-debug] direct reply sent successfully`);
+  } catch (e: any) {
+    api?.logger?.error?.(`[wildfire-debug] sendDirectReply error: ${e.message}`);
+    throw e;
   }
 }

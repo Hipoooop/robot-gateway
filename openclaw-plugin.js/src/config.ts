@@ -10,6 +10,12 @@ export interface WildfireConfig {
   requireMention?: boolean;
   helpKeywords?: string;
   accounts?: Record<string, WildfireConfig>;
+  whiteList?: {
+    enabled?: boolean;
+    allowedUsers?: string[];
+    allowedGroups?: string[];
+    deniedMessage?: string;
+  };
 }
 
 /**
@@ -28,6 +34,12 @@ export function getAccountConfig(api: any, accountId: string = "default"): Wildf
       robotSecret: account.robotSecret ?? cfg.robotSecret,
       requireMention: account.requireMention ?? cfg.requireMention ?? true,
       helpKeywords: account.helpKeywords ?? cfg.helpKeywords ?? "帮,请,分析,总结",
+      whiteList: {
+        enabled: account.whiteList?.enabled ?? cfg.whiteList?.enabled ?? false,
+        allowedUsers: account.whiteList?.allowedUsers ?? cfg.whiteList?.allowedUsers ?? [],
+        allowedGroups: account.whiteList?.allowedGroups ?? cfg.whiteList?.allowedGroups ?? [],
+        deniedMessage: account.whiteList?.deniedMessage ?? cfg.whiteList?.deniedMessage ?? "不允许使用",
+      },
     };
   }
   
@@ -40,6 +52,12 @@ export function getAccountConfig(api: any, accountId: string = "default"): Wildf
       robotSecret: cfg.robotSecret,
       requireMention: cfg.requireMention ?? true,
       helpKeywords: cfg.helpKeywords ?? "帮,请,分析,总结",
+      whiteList: {
+        enabled: cfg.whiteList?.enabled ?? false,
+        allowedUsers: cfg.whiteList?.allowedUsers ?? [],
+        allowedGroups: cfg.whiteList?.allowedGroups ?? [],
+        deniedMessage: cfg.whiteList?.deniedMessage ?? "不允许使用",
+      },
     };
   }
   

@@ -31,18 +31,24 @@ openclaw restart
 {
   "channels": {
       "wildfire": {
-          "enabled": true,
-          "accounts": {
-              "default": {
-              "enabled": true,
-              "gatewayUrl": "ws://your_gateway_host:8884/robot/gateway",
-              "robotId": "your robot id",
-              "robotSecret": "your robot secret",
-              "requireMention": true,
-              "helpKeywords": "帮,请,分析,总结"
-            }
-          }
-      },
+          "enabled": true,
+          "accounts": {
+              "default": {
+                  "enabled": true,
+                  "gatewayUrl": "ws://your_gateway_host:8884/robot/gateway",
+                  "robotId": "your robot id",
+                  "robotSecret": "your robot secret",
+                  "requireMention": true,
+                  "helpKeywords": "帮,请,分析,总结",
+                  "whiteList": {
+                      "enabled": false,
+                      "allowedUsers": ["user001", "user002"],
+                      "allowedGroups": ["group001"],
+                      "deniedMessage": "未授权，不允许使用"
+                  }
+              }
+          }
+      },
   }
 }
 ```
@@ -57,6 +63,17 @@ openclaw restart
 | `robotSecret` | 是 | 机器人密钥 |
 | `requireMention` | 否 | 群聊是否需要@机器人才回复，默认 `true` |
 | `helpKeywords` | 否 | 触发回复的关键词，逗号分隔 |
+| `whiteList.enabled` | 否 | 是否启用白名单，默认 `false` |
+| `whiteList.allowedUsers` | 否 | 允许访问的用户 ID 列表 |
+| `whiteList.allowedGroups` | 否 | 允许访问的群组 ID 列表 |
+| `whiteList.deniedMessage` | 否 | 不在白名单时的回复文案，默认 `不允许使用` |
+
+### 白名单说明
+
+- `whiteList.enabled = false` 时，不做白名单校验，所有消息正常处理。
+- `whiteList.enabled = true` 时，命中 `allowedUsers` 或 `allowedGroups` 任一条件即可继续处理。
+- 未命中白名单时，插件会直接回复 `whiteList.deniedMessage`，然后结束本次处理。
+- 私聊主要匹配 `allowedUsers`；群聊会额外匹配 `allowedGroups`。
 
 ## 特性
 
@@ -64,6 +81,7 @@ openclaw restart
 - **流式回复**: AI 回复实时更新到同一条消息
 - **文件传输**: 支持图片、视频、文件上传和发送
 - **群聊过滤**: 支持@提及检测和关键词触发
+- **白名单控制**: 支持用户和群组白名单，未授权时返回可配置提示语
 
 ## 目录结构
 
