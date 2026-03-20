@@ -47,84 +47,18 @@
 - Maven 3.6 或更高版本
 - 野火IM服务已部署
 
-### 2. 准备机器人
-创建或者利用现有机器人，得到机器人ID，机器人密钥。另外修改机器人的回调地址，改为网关服务地址。
-> 可以参考 部署 部分，创建机器人
+
+### 2. 创建机器人工厂（BotFather）
+进入到 im-server 数据库中执行
+> 直接操作数据库，插入完成之后，需要重启 im-server
+```sql
+insert into t_user (`_uid`,`_name`,`_display_name`,`_portrait`,`_type`,`_dt`) values ('robotfather','robotfather','机器人工厂','https://static.wildfirechat.cn/botfather.png',1,1);
+insert into t_robot (`_uid`,`_owner`,`_secret`,`_callback`,`_state`,`_dt`) values ('robotfather', 'robotfather', '123456', 'http://127.0.0.1:8883/robot/recvmsg', 0, 1);
+```
 
 ### 3. 配置网关
 
-编辑 `gateway/src/main/resources/application.properties`：
-
-```properties
-# HTTP服务端口（接收IM Webhook）
-server.port=8883
-
-# WebSocket服务端口（客户端连接）
-websocket.port=8884
-
-# IM服务的实际地址。如果不在同一个服务器上，请正确配置地址，端口默认是80
-im.url=http://localhost
-```
-
-### 4. 修改Demo中地址
-在类```RobotClientDemo```中，修改机器人ID，机器人密钥和网关地址。
-
-### 5. 打包项目
-
-```bash
-# 使用打包脚本（推荐）
-./build.sh
-
-# 或手动打包
-mvn clean package -DskipTests
-```
-
-打包产物：
-- `gateway/target/gateway-1.0.0.jar` - 网关服务可执行JAR
-- `client/target/client-1.0.0.jar` - 客户端SDK库
-- `demo/target/demo-1.0.0.jar` - 示例程序可执行JAR
-- `openclaw-adapter/target/openclaw-adapter-1.0.0.jar` - OpenClaw转换器示例
-
-
-### 4. 启动网关服务
-把gateway-1.0.0.jar上传到网关服务，执行启动命令：
-
-```bash
-java -jar gateway/target/gateway-1.0.0.jar
-```
-
-启动后：
-- 监听HTTP 8883端口，等待IM服务的回调。
-- 监听WebSocket 8884端口，等待客户端的websocket连入。
-
-防火墙：
-- 公网放开8884的入访权限。
-- 开通与IM服务8883的入访权限。
-- 开通与IM服务80端口的出访权限。
-
-### 5. 运行Demo
-在客户端本地，或者其他地方，运行如下命令：
-
-```bash
-java -jar demo/target/demo-1.0.0.jar
-```
-
-Demo会自动连接到Gateway并使用机器人账号登录。
-
-Demo交互命令：
-```
-send <userId> <text>    - 发送消息
-info <userId>             - 获取用户信息
-group                     - 创建群组
-profile                   - 获取机器人资料
-status                    - 查看连接状态
-help                      - 显示帮助
-quit                      - 退出程序
-```
-
-## 配置说明
-
-### 网关配置
+#### 网关配置说明
 
 | 配置项 | 说明 | 默认值 |
 |--------|------|--------|
@@ -132,7 +66,7 @@ quit                      - 退出程序
 | websocket.port | WebSocket服务端口 | 8884 |
 | im.url | IM服务地址 | http://localhost |
 
-### BotFather 配置（可选）
+#### BotFather 配置说明（可选）
 
 网关集成了 BotFather 功能，支持用户通过聊天命令自动创建机器人。
 
@@ -150,6 +84,14 @@ quit                      - 退出程序
 配置示例：
 
 ```properties
+# HTTP服务端口（接收IM Webhook）
+server.port=8883
+
+# WebSocket服务端口（客户端连接）
+websocket.port=8884
+
+# IM服务的实际地址。如果不在同一个服务器上，请正确配置地址，端口默认是80
+im.url=http://localhost
 # ========== BotFather 配置 ==========
 
 # 功能开关（设为 false 可完全禁用）
@@ -178,23 +120,123 @@ botfather.publicAddr=ws://192.168.1.81:8884/robot/gateway
 - Server API密钥必须正确配置，否则无法创建机器人
 - 可以通过 `botfather.enabled=false` 完全禁用 BotFather 功能
 
-### 客户端配置
+### 5. 打包项目
 
-客户端无需配置文件，连接时传入网关地址即可：
+```bash
+# 使用打包脚本（推荐）
+./build.sh
 
-```java
-RobotServiceClient robot = new RobotServiceClient(
-        "ws://网关地址:8884/robot/gateway",
-        handler
-);
+# 或手动打包
+mvn clean package -DskipTests
 ```
 
-连接参数：
-- **心跳间隔**：270秒（4.5分钟）
-- **重连间隔**：5秒
-- **请求超时**：30秒
+打包产物：
+- `gateway/target/gateway-1.0.0.jar` - 网关服务可执行JAR
+- `client/target/client-1.0.0.jar` - 客户端SDK库
+- `demo/target/demo-1.0.0.jar` - 示例程序可执行JAR
+- `openclaw-adapter/target/openclaw-adapter-1.0.0.jar` - OpenClaw转换器示例
 
-## BotFather 功能
+
+### 4. 启动网关服务
+把gateway-1.0.0.jar上传到网关服务，执行启动命令：
+
+```bash
+nohup java -jar gateway/target/gateway-1.0.0.jar 2>&1 &
+```
+
+启动后：
+- 监听HTTP 8883端口，等待IM服务的回调。
+- 监听WebSocket 8884端口，等待客户端的websocket连入。
+
+防火墙：
+- 公网放开8884的入访权限。
+- 开通与IM服务8883的入访权限。
+- 开通与IM服务80端口的出访权限。
+
+### 5. 安装OpenClaw野火IM插件
+
+具体请参考[插件说明](./openclaw-plugin.js/README.md)
+
+### 6. 开始使用
+现在，打开野火IM客户端，找到你的机器人（搜索**机器人ID**, 不是名字），开始对话吧！
+
+私聊模式：
+* 直接发送消息，AI会立即回复
+
+群聊模式：
+* @机器人提问
+* 或者消息以问号结尾
+* 或者包含"帮"、"分析"、"总结"等关键词
+
+## 线上部署指南
+
+### 部署 robot-gateway
+
+```bash
+# 1. 创建部署目录
+mkdir -p /opt/robot-gateway
+cd /opt/robot-gateway
+
+# 2. 复制jar包
+cp gateway/target/gateway-1.0.0.jar .
+
+# 3. 创建配置文件，也可以从项目获取
+mkdir -p config
+cat > config/application.properties << EOF
+server.port=8883
+websocket.port=8884
+im.url=http://your-im-server
+EOF
+
+# 4. 启动服务
+java -Xms512m -Xmx2g \
+     -XX:+UseG1GC \
+     -jar gateway-1.0.0.jar \
+     --spring.config.location=file:config/application.properties
+```
+
+#### 使用Systemd管理
+
+创建 `/etc/systemd/system/robot-gateway.service`：
+
+```ini
+[Unit]
+Description=Robot Gateway Service
+After=network.target
+
+[Service]
+Type=simple
+User=robot
+WorkingDirectory=/opt/robot-gateway
+ExecStart=/usr/bin/java -jar /opt/robot-gateway/gateway-1.0.0.jar \
+  --spring.config.location=file:/opt/robot-gateway/config/application.properties
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+启动服务：
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable robot-gateway
+sudo systemctl start robot-gateway
+sudo systemctl status robot-gateway
+```
+
+#### 健康检查
+
+```bash
+# 检查HTTP端口
+curl http://localhost:8883/actuator/health
+
+# 检查WebSocket端口（需要安装wscat）
+wscat -c ws://localhost:8884/robot/gateway
+```
+
+## BotFather 功能说明
 
 网关集成了 BotFather 功能，用户可以直接向 BotFather 机器人发送命令来创建和管理机器人。
 
@@ -255,86 +297,6 @@ BotFather 命令处理      忽略消息
 ### 功能开关
 
 将 `botfather.enabled` 设为 `false`，所有消息将走原有网关业务，BotFather 功能完全禁用。
-
-## 部署指南
-
-### 创建机器人工厂（BotFather）
-进入到数据库中执行
-> 直接操作数据库，插入完成之后，需要重启 im-server
-```sql
-insert into t_user (`_uid`,`_name`,`_display_name`,`_portrait`,`_type`,`_dt`) values ('robotfather','robotfather','机器人工厂','https://static.wildfirechat.cn/botfather.png',1,1);
-insert into t_robot (`_uid`,`_owner`,`_secret`,`_callback`,`_state`,`_dt`) values ('robotfather', 'robotfather', '123456', 'http://127.0.0.1:8883/robot/recvmsg', 0, 1);
-```
-
-### 部署 robot-gateay
-
-```bash
-# 1. 创建部署目录
-mkdir -p /opt/robot-gateway
-cd /opt/robot-gateway
-
-# 2. 复制jar包
-cp gateway/target/gateway-1.0.0.jar .
-
-# 3. 创建配置文件
-mkdir -p config
-cat > config/application.properties << EOF
-server.port=8883
-websocket.port=8884
-im.url=http://your-im-server
-EOF
-
-# 4. 启动服务
-java -Xms512m -Xmx2g \
-     -XX:+UseG1GC \
-     -jar gateway-1.0.0.jar \
-     --spring.config.location=file:config/application.properties
-```
-
-#### 使用Systemd管理
-
-创建 `/etc/systemd/system/robot-gateway.service`：
-
-```ini
-[Unit]
-Description=Robot Gateway Service
-After=network.target
-
-[Service]
-Type=simple
-User=robot
-WorkingDirectory=/opt/robot-gateway
-ExecStart=/usr/bin/java -jar /opt/robot-gateway/gateway-1.0.0.jar \
-  --spring.config.location=file:/opt/robot-gateway/config/application.properties
-Restart=on-failure
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-```
-
-启动服务：
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable robot-gateway
-sudo systemctl start robot-gateway
-sudo systemctl status robot-gateway
-```
-
-#### 健康检查
-
-```bash
-# 检查HTTP端口
-curl http://localhost:8883/actuator/health
-
-# 检查WebSocket端口（需要安装wscat）
-wscat -c ws://localhost:8884/robot/gateway
-```
-
-### 安装openclaw野火IM插件
-
-具体请参考[插件说明](./openclaw-plugin.js/README.MD)
 
 
 ## 模块说明
