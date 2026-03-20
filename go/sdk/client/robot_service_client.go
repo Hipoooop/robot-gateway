@@ -394,14 +394,14 @@ func (c *RobotServiceClient) UpdateMomentsBlockList(addBlockUsers, removeBlockUs
 // ==================== File Upload Related ====================
 
 // GetPresignedUploadUrl gets a presigned upload URL.
-func (c *RobotServiceClient) GetPresignedUploadUrl(fileName string, size int, mediaType string) (*protocol.IMResult[protocol.OutputPresignedUploadUrl], error) {
-	params := []interface{}{fileName, size, mediaType}
+func (c *RobotServiceClient) GetPresignedUploadUrl(fileName string, messageContentMediaType int, mimeType string) (*protocol.IMResult[protocol.OutputPresignedUploadUrl], error) {
+	params := []interface{}{fileName, messageContentMediaType, mimeType}
 	return invoke[protocol.OutputPresignedUploadUrl](c, "getPresignedUploadUrl", params)
 }
 
 // UploadFile uploads a file (supports Qiniu and other object storage).
 // It first gets a presigned upload URL, then uploads directly to the storage service.
-func (c *RobotServiceClient) UploadFile(fileData []byte, fileName string, fileType int, mediaType string) (*protocol.IMResult[string], error) {
+func (c *RobotServiceClient) UploadFile(fileData []byte, fileName string, messageContentMediaType int, mimeType string) (*protocol.IMResult[string], error) {
 	if len(fileData) == 0 {
 		return &protocol.IMResult[string]{
 			Code: -1,
@@ -410,12 +410,12 @@ func (c *RobotServiceClient) UploadFile(fileData []byte, fileName string, fileTy
 	}
 
 	// Infer media type from file name if not provided
-	if mediaType == "" {
-		mediaType = getContentTypeByFileName(fileName)
+	if mimeType == "" {
+		mimeType = getContentTypeByFileName(fileName)
 	}
 
 	// 1. Get presigned upload URL
-	presignedResult, err := c.GetPresignedUploadUrl(fileName, len(fileData), mediaType)
+	presignedResult, err := c.GetPresignedUploadUrl(fileName, messageContentMediaType, mimeType)
 	if err != nil {
 		return &protocol.IMResult[string]{
 			Code: -1,
@@ -441,14 +441,14 @@ func (c *RobotServiceClient) UploadFile(fileData []byte, fileName string, fileTy
 	// 2. Upload based on storage type
 	if presignedUrl.Type == 1 {
 		// Qiniu upload
-		return c.uploadToQiniu(&presignedUrl, fileData, fileName, mediaType)
+		return c.uploadToQiniu(&presignedUrl, fileData, fileName, mimeType)
 	}
 	// Other storage (S3/OSS)
-	return c.uploadToOther(&presignedUrl, fileData, mediaType)
+	return c.uploadToOther(&presignedUrl, fileData, mimeType)
 }
 
 // uploadToQiniu uploads file to Qiniu using multipart/form-data.
-func (c *RobotServiceClient) uploadToQiniu(presignedURL *protocol.OutputPresignedUploadUrl, fileData []byte, fileName, mediaType string) (*protocol.IMResult[string], error) {
+func (c *RobotServiceClient) uploadToQiniu(presignedURL *protocol.OutputPresignedUploadUrl, fileData []byte, fileName, mimeType string) (*protocol.IMResult[string], error) {
 	uploadURL := presignedURL.UploadURL
 
 	// Parse URL: format is "http://host?token?key"
@@ -531,7 +531,7 @@ func (c *RobotServiceClient) uploadToQiniu(presignedURL *protocol.OutputPresigne
 }
 
 // uploadToOther uploads file to generic storage (S3/OSS) using HTTP PUT.
-func (c *RobotServiceClient) uploadToOther(presignedURL *protocol.OutputPresignedUploadUrl, fileData []byte, mediaType string) (*protocol.IMResult[string], error) {
+func (c *RobotServiceClient) uploadToOther(presignedURL *protocol.OutputPresignedUploadUrl, fileData []byte, mimeType string) (*protocol.IMResult[string], error) {
 	// Try primary URL first
 	req, err := http.NewRequest("PUT", presignedURL.UploadURL, bytes.NewReader(fileData))
 	if err != nil {
@@ -540,7 +540,7 @@ func (c *RobotServiceClient) uploadToOther(presignedURL *protocol.OutputPresigne
 			Msg:  fmt.Sprintf("Failed to create request: %v", err),
 		}, nil
 	}
-	req.Header.Set("Content-Type", mediaType)
+	req.Header.Set("Content-Type", mimeType)
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
@@ -569,7 +569,7 @@ func (c *RobotServiceClient) uploadToOther(presignedURL *protocol.OutputPresigne
 				Msg:  fmt.Sprintf("Failed to create backup request: %v", err),
 			}, nil
 		}
-		req.Header.Set("Content-Type", mediaType)
+		req.Header.Set("Content-Type", mimeType)
 
 		resp, err = client.Do(req)
 		if err != nil {

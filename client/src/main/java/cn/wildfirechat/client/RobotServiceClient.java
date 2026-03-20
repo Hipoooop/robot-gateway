@@ -348,12 +348,12 @@ public class RobotServiceClient {
     /**
      * 获取预签名上传URL
      * @param fileName 文件名
-     * @param size 文件大小
-     * @param mediaType 媒体类型
+     * @param messageContentMediaType 消息内容媒体类型
+     * @param mimeType Http的ContentType Header，可以为空，为空时默认为"application/octet-stream"
      * @return 预签名上传URL结果
      */
-    public IMResult<OutputPresignedUploadUrl> getPresignedUploadUrl(String fileName, int size, String mediaType) {
-        return invoke("getPresignedUploadUrl", Arrays.asList(fileName, size, mediaType),
+    public IMResult<OutputPresignedUploadUrl> getPresignedUploadUrl(String fileName, int messageContentMediaType, String mimeType) {
+        return invoke("getPresignedUploadUrl", Arrays.asList(fileName, messageContentMediaType, mimeType),
                 new com.google.gson.reflect.TypeToken<IMResult<OutputPresignedUploadUrl>>(){}.getType());
     }
 
@@ -371,11 +371,11 @@ public class RobotServiceClient {
      * 上传文件
      * 先获取预签名上传URL，然后直接上传到存储服务
      * @param file 要上传的文件
-     * @param type 文件类型
-     * @param mediaType 媒体类型
+     * @param messageContentMediaType 消息内容媒体类型
+     * @param mimeType 媒体类型
      * @return 上传后的下载URL
      */
-    public IMResult<String> uploadFile(File file, int type, String mediaType) {
+    public IMResult<String> uploadFile(File file, int messageContentMediaType, String mimeType) {
         if (file == null || !file.exists()) {
             IMResult<String> result = new IMResult<>();
             result.setCode(-1);
@@ -384,12 +384,12 @@ public class RobotServiceClient {
         }
 
         // 如果mediaType为空，根据文件名推断
-        if (mediaType == null || mediaType.isEmpty()) {
-            mediaType = getContentTypeByFileName(file.getName());
+        if (mimeType == null || mimeType.isEmpty()) {
+            mimeType = getContentTypeByFileName(file.getName());
         }
 
         try {
-            return doUploadFile(file.getName(), type, mediaType, file, null);
+            return doUploadFile(file.getName(), messageContentMediaType, mimeType, file, null);
         } catch (Exception e) {
             LOG.error("上传文件失败: {}", e.getMessage(), e);
             IMResult<String> result = new IMResult<>();
@@ -415,11 +415,11 @@ public class RobotServiceClient {
      * 先获取预签名上传URL，然后直接上传到存储服务
      * @param inputStream 文件输入流
      * @param fileName 文件名
-     * @param type 文件类型
-     * @param mediaType 媒体类型
+     * @param messageContentMediaType 消息内容媒体类型
+     * @param mimeType 媒体类型
      * @return 上传后的下载URL
      */
-    public IMResult<String> uploadFile(InputStream inputStream, String fileName, int type, String mediaType) {
+    public IMResult<String> uploadFile(InputStream inputStream, String fileName, int messageContentMediaType, String mimeType) {
         if (inputStream == null) {
             IMResult<String> result = new IMResult<>();
             result.setCode(-1);
@@ -427,13 +427,12 @@ public class RobotServiceClient {
             return result;
         }
 
-        // 如果mediaType为空，根据文件名推断
-        if (mediaType == null || mediaType.isEmpty()) {
-            mediaType = getContentTypeByFileName(fileName);
+        if (mimeType == null || mimeType.isEmpty()) {
+            mimeType = getContentTypeByFileName(fileName);
         }
 
         try {
-            return doUploadFile(fileName, type, mediaType, null, inputStream);
+            return doUploadFile(fileName, messageContentMediaType, mimeType, null, inputStream);
         } catch (Exception e) {
             LOG.error("上传文件失败: {}", e.getMessage(), e);
             IMResult<String> result = new IMResult<>();
@@ -447,24 +446,17 @@ public class RobotServiceClient {
      * 执行文件上传
      * 根据存储类型区分：1=七牛云，其他=通用S3/OSS
      * @param fileName 文件名
-     * @param type 文件类型
-     * @param mediaType 媒体类型
+     * @param messageContentMediaType 媒体消息媒体类型
+     * @param mimeType 媒体类型
      * @param file 文件对象（与inputStream二选一）
      * @param inputStream 输入流（与file二选一）
      * @return 上传后的下载URL
      * @throws Exception 上传过程中的异常
      */
-    private IMResult<String> doUploadFile(String fileName, int type, String mediaType, File file, InputStream inputStream) throws Exception {
-        // 获取文件大小
-        long fileSize;
-        if (file != null) {
-            fileSize = file.length();
-        } else {
-            fileSize = inputStream.available();
-        }
+    private IMResult<String> doUploadFile(String fileName, int messageContentMediaType, String mimeType, File file, InputStream inputStream) throws Exception {
 
         // 1. 获取预签名上传URL
-        IMResult<OutputPresignedUploadUrl> presignedResult = getPresignedUploadUrl(fileName, (int) fileSize, mediaType);
+        IMResult<OutputPresignedUploadUrl> presignedResult = getPresignedUploadUrl(fileName, messageContentMediaType, mimeType);
         if (presignedResult.getErrorCode() != cn.wildfirechat.common.ErrorCode.ERROR_CODE_SUCCESS) {
             IMResult<String> result = new IMResult<>();
             result.setCode(presignedResult.getCode());
@@ -483,10 +475,10 @@ public class RobotServiceClient {
         // 2. 根据存储类型选择上传方式
         if (presignedUrl.type == 1) {
             // 七牛云上传
-            return uploadToQiniu(presignedUrl, file, inputStream, fileName, mediaType);
+            return uploadToQiniu(presignedUrl, file, inputStream, fileName, mimeType);
         } else {
             // 其他存储（S3/OSS等）
-            return uploadToOther(presignedUrl, file, inputStream, mediaType);
+            return uploadToOther(presignedUrl, file, inputStream, mimeType);
         }
     }
 
@@ -494,7 +486,7 @@ public class RobotServiceClient {
      * 上传到七牛云
      * 使用multipart/form-data格式，需要解析URL获取token和key
      */
-    private IMResult<String> uploadToQiniu(OutputPresignedUploadUrl presignedUrl, File file, InputStream inputStream, String fileName, String mediaType) throws Exception {
+    private IMResult<String> uploadToQiniu(OutputPresignedUploadUrl presignedUrl, File file, InputStream inputStream, String fileName, String mimeType) throws Exception {
         String uploadUrl = presignedUrl.uploadUrl;
 
         // 解析URL：格式为 "http://host?token?key"
@@ -523,9 +515,9 @@ public class RobotServiceClient {
             builder.addTextBody("key", key);
 
             if (file != null) {
-                builder.addPart("file", new FileBody(file, ContentType.create(mediaType), fileName));
+                builder.addPart("file", new FileBody(file, ContentType.create(mimeType), fileName));
             } else if (inputStream != null) {
-                builder.addPart("file", new InputStreamBody(inputStream, ContentType.create(mediaType), fileName));
+                builder.addPart("file", new InputStreamBody(inputStream, ContentType.create(mimeType), fileName));
             }
 
             httpPost.setEntity(builder.build());
@@ -567,7 +559,7 @@ public class RobotServiceClient {
      * 上传到通用存储（S3/OSS等）
      * 使用HTTP PUT直接上传
      */
-    private IMResult<String> uploadToOther(OutputPresignedUploadUrl presignedUrl, File file, InputStream inputStream, String mediaType) throws Exception {
+    private IMResult<String> uploadToOther(OutputPresignedUploadUrl presignedUrl, File file, InputStream inputStream, String mimeType) throws Exception {
         CloseableHttpClient httpClient = null;
         CloseableHttpResponse response = null;
 
@@ -576,15 +568,15 @@ public class RobotServiceClient {
 
             // 先尝试主上传URL
             HttpPut httpPut = new HttpPut(presignedUrl.uploadUrl);
-            httpPut.setHeader("Content-Type", mediaType);
+            httpPut.setHeader("Content-Type", mimeType);
 
             if (file != null) {
                 FileEntity entity = new FileEntity(file);
-                entity.setContentType(mediaType);
+                entity.setContentType(mimeType);
                 httpPut.setEntity(entity);
             } else if (inputStream != null) {
                 InputStreamEntity entity = new InputStreamEntity(inputStream);
-                entity.setContentType(mediaType);
+                entity.setContentType(mimeType);
                 httpPut.setEntity(entity);
             }
 
@@ -605,11 +597,11 @@ public class RobotServiceClient {
             // 主URL失败，尝试备用URL
             if (presignedUrl.backupUploadUrl != null && !presignedUrl.backupUploadUrl.isEmpty()) {
                 httpPut = new HttpPut(presignedUrl.backupUploadUrl);
-                httpPut.setHeader("Content-Type", mediaType);
+                httpPut.setHeader("Content-Type", mimeType);
 
                 if (file != null) {
                     FileEntity entity = new FileEntity(file);
-                    entity.setContentType(mediaType);
+                    entity.setContentType(mimeType);
                     httpPut.setEntity(entity);
                 } else {
                     // 输入流无法重用，返回错误

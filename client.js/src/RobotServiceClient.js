@@ -529,42 +529,30 @@ export class RobotServiceClient {
     /**
      * 获取预签名上传URL
      * @param {string} fileName - 文件名
-     * @param {number} size - 文件大小
-     * @param {string} mediaType - 媒体类型
+     * @param {number} messageContentMediaType - 消息内容媒体类型
+     * @param {string} mimeType - 媒体类型
      * @returns {Promise<IMResult<OutputPresignedUploadUrl>>}
      */
-    async getPresignedUploadUrl(fileName, size, mediaType) {
-        return this.invoke('getPresignedUploadUrl', [fileName, size, mediaType]);
+    async getPresignedUploadUrl(fileName, messageContentMediaType, mimeType) {
+        return this.invoke('getPresignedUploadUrl', [fileName, messageContentMediaType, mimeType]);
     }
 
     /**
      * 上传文件
      * @param {Buffer|Blob|File} fileData - 文件数据
      * @param {string} fileName - 文件名
-     * @param {number} type - 文件类型，默认4
-     * @param {string} mediaType - 媒体类型，自动根据文件名推断
+     * @param {number} messageContentMediaType - 消息内容媒体类型，默认4
+     * @param {string} mimeType - 媒体类型，自动根据文件名推断
      * @returns {Promise<IMResult<string>>} - 上传后的下载URL
      */
-    async uploadFile(fileData, fileName, type = 4, mediaType = null) {
+    async uploadFile(fileData, fileName, messageContentMediaType = 4, mimeType = null) {
         // 如果mediaType为空，根据文件名推断
-        if (!mediaType) {
-            mediaType = this.getContentTypeByFileName(fileName);
-        }
-
-        // 获取文件大小
-        let fileSize;
-        if (fileData instanceof Buffer) {
-            fileSize = fileData.length;
-        } else if (fileData instanceof Blob || fileData instanceof File) {
-            fileSize = fileData.size;
-        } else if (typeof fileData === 'string') {
-            fileSize = Buffer.byteLength(fileData, 'utf8');
-        } else {
-            return new IMResult(-1, '不支持的文件数据类型', null);
+        if (!mimeType) {
+            mimeType = this.getContentTypeByFileName(fileName);
         }
 
         // 1. 获取预签名上传URL
-        const presignedResult = await this.getPresignedUploadUrl(fileName, fileSize, mediaType);
+        const presignedResult = await this.getPresignedUploadUrl(fileName, messageContentMediaType, mimeType);
         if (!presignedResult.isSuccess()) {
             return new IMResult(presignedResult.code, presignedResult.msg, null);
         }
@@ -577,10 +565,10 @@ export class RobotServiceClient {
         // 2. 根据存储类型选择上传方式
         if (presignedUrl.type === 1) {
             // 七牛云上传
-            return this.uploadToQiniu(presignedUrl, fileData, fileName, mediaType);
+            return this.uploadToQiniu(presignedUrl, fileData, fileName, mimeType);
         } else {
             // 其他存储（S3/OSS等）
-            return this.uploadToOther(presignedUrl, fileData, mediaType);
+            return this.uploadToOther(presignedUrl, fileData, mimeType);
         }
     }
 
@@ -589,10 +577,10 @@ export class RobotServiceClient {
      * @param {OutputPresignedUploadUrl} presignedUrl - 预签名URL信息
      * @param {Buffer|Blob|File} fileData - 文件数据
      * @param {string} fileName - 文件名
-     * @param {string} mediaType - 媒体类型
+     * @param {string} mimeType - 媒体类型
      * @returns {Promise<IMResult<string>>}
      */
-    async uploadToQiniu(presignedUrl, fileData, fileName, mediaType) {
+    async uploadToQiniu(presignedUrl, fileData, fileName, mimeType) {
         const uploadUrl = presignedUrl.uploadUrl;
 
         // 解析URL：格式为 "http://host?token?key"
@@ -614,7 +602,7 @@ export class RobotServiceClient {
             const nodeFormData = new FormData();
             nodeFormData.append('token', token);
             nodeFormData.append('key', key);
-            nodeFormData.append('file', fileData, { filename: fileName, contentType: mediaType });
+            nodeFormData.append('file', fileData, { filename: fileName, contentType: mimeType });
             
             const response = await fetch(serverUrl, {
                 method: 'POST',
@@ -635,10 +623,10 @@ export class RobotServiceClient {
      * 上传到通用存储（S3/OSS等）
      * @param {OutputPresignedUploadUrl} presignedUrl - 预签名URL信息
      * @param {Buffer|Blob|File} fileData - 文件数据
-     * @param {string} mediaType - 媒体类型
+     * @param {string} mimeType - 媒体类型
      * @returns {Promise<IMResult<string>>}
      */
-    async uploadToOther(presignedUrl, fileData, mediaType) {
+    async uploadToOther(presignedUrl, fileData, mimeType) {
         try {
             // 准备请求体
             let body;
@@ -657,7 +645,7 @@ export class RobotServiceClient {
             let response = await fetch(presignedUrl.uploadUrl, {
                 method: 'PUT',
                 headers: {
-                    'Content-Type': mediaType
+                    'Content-Type': mimeType
                 },
                 body: body
             });
@@ -671,7 +659,7 @@ export class RobotServiceClient {
                 response = await fetch(presignedUrl.backupUploadUrl, {
                     method: 'PUT',
                     headers: {
-                        'Content-Type': mediaType
+                        'Content-Type': mimeType
                     },
                     body: body
                 });
