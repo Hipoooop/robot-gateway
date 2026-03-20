@@ -2,6 +2,8 @@
 
 OpenClaw 的野火IM 频道插件，支持收发消息、流式回复和文件传输。
 
+> 本插件，依赖于[robot-gateway](https://github.com/wildfirechat/robot-gateway)，请先部署`robot-gateway`
+
 ## 安装
 ```
 openclaw plugins install @wildfirechat/openclaw-plugin

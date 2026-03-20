@@ -23,8 +23,10 @@
 ### 模块
 - gateway 网关，把机器人的HTTP接口转换为WebSocket接口。另外添加了机器人工厂功能，可以用户自己创建机器人，参考电报的BotFather。
 - client 客户端SDK，实现了客户端WebSocket接口，可以直接使用。
+- client.js js版客户端SDK，实现了客户端WebSocket接口，可以直接使用。
 - demo 使用客户端SDK的Demo，演示如何使用SDK。
 - openclaw-adapter OpenClaw的转换器，使用客户端SDK，实现了野火IM和OpenClaw的对接。
+- openclaw-plugin OpenClaw的野火IM，使用 js 版客户端SDK，实现了野火IM和OpenClaw的对接，支持会话隔离，文件上传，建议使用。
 
 ### 特性
 
@@ -47,6 +49,7 @@
 
 ### 2. 准备机器人
 创建或者利用现有机器人，得到机器人ID，机器人密钥。另外修改机器人的回调地址，改为网关服务地址。
+> 可以参考 部署 部分，创建机器人
 
 ### 3. 配置网关
 
@@ -118,117 +121,6 @@ status                    - 查看连接状态
 help                      - 显示帮助
 quit                      - 退出程序
 ```
-
-## 客户端使用
-
-### Maven依赖
-
-```xml
-<dependency>
-    <groupId>cn.wildfirechat</groupId>
-    <artifactId>client</artifactId>
-    <version>1.0.0</version>
-</dependency>
-```
-
-### 代码示例
-
-```java
-import cn.wildfirechat.client.*;
-import cn.wildfirechat.client.handler.*;
-import cn.wildfirechat.pojos.*;
-import cn.wildfirechat.sdk.model.IMResult;
-
-// 1. 创建消息处理器
-MessageHandler handler = new MessageHandler() {
-    @Override
-    public void onMessage(PushMessage message) {
-        System.out.println("收到消息: " + message.getData());
-    }
-
-    @Override
-    public void onConnectionChanged(boolean connected) {
-        System.out.println("连接状态: " + connected);
-    }
-
-    @Override
-    public void onError(String error) {
-        System.err.println("错误: " + error);
-    }
-};
-
-// 2. 创建RobotService客户端
-RobotServiceClient robot = new RobotServiceClient(
-        "ws://localhost:8884/robot/gateway",
-        handler
-);
-
-// 3. 连接
-boolean success = robot.connect("FireRobot", "123456");
-if (!success) {
-    System.err.println("鉴权失败");
-    return;
-}
-
-// 4. 调用机器人API
-Conversation conv = new Conversation();
-conv.setType(0); // 单聊
-conv.setTarget("userId");
-
-MessagePayload payload = new MessagePayload();
-payload.setType(1); // 文本消息
-payload.setContent("Hello from Robot!");
-
-IMResult<SendMessageResult> result = robot.sendMessage("FireRobot", conv, payload);
-if (result.getCode() == 0) {
-    System.out.println("发送成功，消息ID: " + result.getResult().getMessageUid());
-}
-
-// 5. 关闭连接
-robot.close();
-```
-
-### 并发请求示例
-
-```java
-// 并发调用多个API
-List<IMResult<InputOutputUserInfo>> results = userIds.parallelStream()
-    .map(userId -> client.getUserInfo(userId))
-    .collect(Collectors.toList());
-```
-
-## API支持
-
-客户端SDK支持野火IM RobotService的所有方法，包括：
-
-### 消息相关
-- `sendMessage` - 发送消息
-- `replyMessage` - 回复消息
-- `recallMessage` - 撤回消息
-- `updateMessage` - 更新消息
-
-### 用户相关
-- `getUserInfo` - 获取用户信息
-- `getUserInfoByMobile` - 通过手机号获取用户
-- `getUserInfoByName` - 通过用户名获取用户
-- `applicationGetUserInfo` - 应用获取用户信息
-
-### 群组相关
-- `createGroup` - 创建群组
-- `getGroupInfo` - 获取群组信息
-- `dismissGroup` - 解散群组
-- `transferGroup` - 转让群组
-- `modifyGroupInfo` - 修改群组信息
-- `getGroupMembers` - 获取群成员列表
-- `addGroupMembers` - 添加群成员
-- `kickoffGroupMembers` - 踢出群成员
-- 等等...
-
-### 机器人资料
-- `getProfile` - 获取机器人资料
-- `updateProfile` - 更新机器人资料
-
-完整API列表请参考：[ARCHITECTURE.md](ARCHITECTURE.md)
 
 ## 配置说明
 
@@ -368,12 +260,13 @@ BotFather 命令处理      忽略消息
 
 ### 创建机器人工厂（BotFather）
 进入到数据库中执行
+> 直接操作数据库，插入完成之后，需要重启 im-server
 ```sql
 insert into t_user (`_uid`,`_name`,`_display_name`,`_portrait`,`_type`,`_dt`) values ('robotfather','robotfather','机器人工厂','https://static.wildfirechat.cn/botfather.png',1,1);
 insert into t_robot (`_uid`,`_owner`,`_secret`,`_callback`,`_state`,`_dt`) values ('robotfather', 'robotfather', '123456', 'http://127.0.0.1:8883/robot/recvmsg', 0, 1);
 ```
 
-### 生产环境部署
+### 部署 robot-gateay
 
 ```bash
 # 1. 创建部署目录
@@ -398,7 +291,7 @@ java -Xms512m -Xmx2g \
      --spring.config.location=file:config/application.properties
 ```
 
-### 使用Systemd管理
+#### 使用Systemd管理
 
 创建 `/etc/systemd/system/robot-gateway.service`：
 
@@ -429,7 +322,7 @@ sudo systemctl start robot-gateway
 sudo systemctl status robot-gateway
 ```
 
-### 健康检查
+#### 健康检查
 
 ```bash
 # 检查HTTP端口
@@ -438,6 +331,11 @@ curl http://localhost:8883/actuator/health
 # 检查WebSocket端口（需要安装wscat）
 wscat -c ws://localhost:8884/robot/gateway
 ```
+
+### 安装openclaw野火IM插件
+
+具体请参考[插件说明](./openclaw-plugin.js/README.MD)
+
 
 ## 模块说明
 
@@ -455,6 +353,117 @@ wscat -c ws://localhost:8884/robot/gateway
 - **功能**：机器人客户端交互式Demo
 - **命令**：send, info, group, profile, status, help, quit
 - **输出**：demo-1.0.0.jar (可执行JAR)
+
+## 客户端使用
+
+### Maven依赖
+
+```xml
+<dependency>
+    <groupId>cn.wildfirechat</groupId>
+    <artifactId>client</artifactId>
+    <version>1.0.0</version>
+</dependency>
+```
+
+### 代码示例
+
+```java
+import cn.wildfirechat.client.*;
+import cn.wildfirechat.client.handler.*;
+import cn.wildfirechat.pojos.*;
+import cn.wildfirechat.sdk.model.IMResult;
+
+// 1. 创建消息处理器
+MessageHandler handler = new MessageHandler() {
+    @Override
+    public void onMessage(PushMessage message) {
+        System.out.println("收到消息: " + message.getData());
+    }
+
+    @Override
+    public void onConnectionChanged(boolean connected) {
+        System.out.println("连接状态: " + connected);
+    }
+
+    @Override
+    public void onError(String error) {
+        System.err.println("错误: " + error);
+    }
+};
+
+// 2. 创建RobotService客户端
+RobotServiceClient robot = new RobotServiceClient(
+        "ws://localhost:8884/robot/gateway",
+        handler
+);
+
+// 3. 连接
+boolean success = robot.connect("FireRobot", "123456");
+if (!success) {
+    System.err.println("鉴权失败");
+    return;
+}
+
+// 4. 调用机器人API
+Conversation conv = new Conversation();
+conv.setType(0); // 单聊
+conv.setTarget("userId");
+
+MessagePayload payload = new MessagePayload();
+payload.setType(1); // 文本消息
+payload.setContent("Hello from Robot!");
+
+IMResult<SendMessageResult> result = robot.sendMessage("FireRobot", conv, payload);
+if (result.getCode() == 0) {
+    System.out.println("发送成功，消息ID: " + result.getResult().getMessageUid());
+}
+
+// 5. 关闭连接
+robot.close();
+```
+
+### 并发请求示例
+
+```java
+// 并发调用多个API
+List<IMResult<InputOutputUserInfo>> results = userIds.parallelStream()
+    .map(userId -> client.getUserInfo(userId))
+    .collect(Collectors.toList());
+```
+
+## API支持
+
+客户端SDK支持野火IM RobotService的所有方法，包括：
+
+### 消息相关
+- `sendMessage` - 发送消息
+- `replyMessage` - 回复消息
+- `recallMessage` - 撤回消息
+- `updateMessage` - 更新消息
+
+### 用户相关
+- `getUserInfo` - 获取用户信息
+- `getUserInfoByMobile` - 通过手机号获取用户
+- `getUserInfoByName` - 通过用户名获取用户
+- `applicationGetUserInfo` - 应用获取用户信息
+
+### 群组相关
+- `createGroup` - 创建群组
+- `getGroupInfo` - 获取群组信息
+- `dismissGroup` - 解散群组
+- `transferGroup` - 转让群组
+- `modifyGroupInfo` - 修改群组信息
+- `getGroupMembers` - 获取群成员列表
+- `addGroupMembers` - 添加群成员
+- `kickoffGroupMembers` - 踢出群成员
+- 等等...
+
+### 机器人资料
+- `getProfile` - 获取机器人资料
+- `updateProfile` - 更新机器人资料
+
+完整API列表请参考：[ARCHITECTURE.md](ARCHITECTURE.md)
 
 ## 常见问题
 
