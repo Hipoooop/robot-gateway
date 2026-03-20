@@ -118,11 +118,9 @@ openclaw-plugin.js/
 
 ## 调试
 
-启用详细日志：
 
 ```bash
-openclaw config set logLevel debug
-openclaw restart
+openclaw logs --follow
 ```
 
 日志前缀 `[wildfire]` 即为插件输出。
