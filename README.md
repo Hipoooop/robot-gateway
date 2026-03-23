@@ -10,7 +10,7 @@
 
 ```
 ┌─────────────────┐   WebSocket   ┌─────────────────┐  HTTP/RobotService  ┌──────────────┐
-│                 │   :8884       │                 │   :8883             │              │
+│                 │   :8884       │                 │   :8885             │              │
 │  Java客户端      │  ←鉴权+转发→   │     网关服务      │ ←────────────────→  │    IM服务    │
 │  (Client SDK)   │               │   (无状态代理)    │                     │              │
 │                 │               │                 │                     │              │
@@ -50,42 +50,47 @@
 
 ### 2. 创建机器人工厂（BotFather）
 进入到 im-server 数据库中执行
+> 注意:
+> 
+> 下面`sql`语句中，robot的回调地址默认是 `http://127.0.0.1:8885/robot/recvmsg` 要根据实际情况配置。
+> 默认`127.0.0.1`是假设`robot-gateway`和`im-server`是部署在同一台服务器上，且`robot-gateway`使用默认端口。
+>
 > 直接操作数据库，插入完成之后，需要重启 im-server
 ```sql
 insert into t_user (`_uid`,`_name`,`_display_name`,`_portrait`,`_type`,`_dt`) values ('robotfather','robotfather','机器人工厂','https://static.wildfirechat.cn/botfather.png',1,1);
-insert into t_robot (`_uid`,`_owner`,`_secret`,`_callback`,`_state`,`_dt`) values ('robotfather', 'robotfather', '123456', 'http://127.0.0.1:8883/robot/recvmsg', 0, 1);
+insert into t_robot (`_uid`,`_owner`,`_secret`,`_callback`,`_state`,`_dt`) values ('robotfather', 'robotfather', '123456', 'http://127.0.0.1:8885/robot/recvmsg', 0, 1);
 ```
 
 ### 3. 配置网关
 
 #### 网关配置说明
 
-| 配置项 | 说明 | 默认值 |
-|--------|------|--------|
-| server.port | HTTP服务端口 | 8883 |
-| websocket.port | WebSocket服务端口 | 8884 |
-| im.url | IM服务地址 | http://localhost |
+| 配置项            | 说明            | 默认值              |
+|----------------|---------------|------------------|
+| server.port    | HTTP服务端口      | 8885             |
+| websocket.port | WebSocket服务端口 | 8884             |
+| im.url         | IM服务地址        | http://localhost |
 
 #### BotFather 配置说明（可选）
 
 网关集成了 BotFather 功能，支持用户通过聊天命令自动创建机器人。
 
-| 配置项 | 说明               | 默认值                    |
-|--------|------------------|------------------------|
-| botfather.enabled | BotFather 功能开关   | false                  |
-| botfather.robot.id | BotFather 机器人 ID | -                      |
-| botfather.robot.name | BotFather 机器人名称  | -                      |
+| 配置项                    | 说明               | 默认值                    |
+|------------------------|------------------|------------------------|
+| botfather.enabled      | BotFather 功能开关   | false                  |
+| botfather.robot.id     | BotFather 机器人 ID | -                      |
+| botfather.robot.name   | BotFather 机器人名称  | -                      |
 | botfather.robot.secret | BotFather 机器人密钥  | -                      |
-| botfather.admin.url | IM服务API地址        | http://localhost:18080 |
+| botfather.admin.url    | IM服务API地址        | http://localhost:18080 |
 | botfather.admin.secret | IM服务API密钥        | -                      |
-| botfather.callbackUrl | 机器人回调地址    | -                      |
-| botfather.publicAddr | 网关公网地址       | -                      |
+| botfather.callbackUrl  | 机器人回调地址          | -                      |
+| botfather.publicAddr   | 网关公网地址           | -                      |
 
 配置示例：
 
 ```properties
 # HTTP服务端口（接收IM Webhook）
-server.port=8883
+server.port=8885
 
 # WebSocket服务端口（客户端连接）
 websocket.port=8884
@@ -107,7 +112,7 @@ botfather.admin.url=http://localhost:18080
 botfather.admin.secret=123456
 
 # 回调地址（创建机器人时自动设置，需要是网关的地址）
-botfather.callbackUrl=http://127.0.0.1:8883/robot/recvmsg
+botfather.callbackUrl=http://127.0.0.1:8885/robot/recvmsg
 
 # 网关公网地址
 # 用户连接此地址来使用创建的机器人
@@ -145,12 +150,12 @@ nohup java -jar gateway/target/gateway-1.0.0.jar 2>&1 &
 ```
 
 启动后：
-- 监听HTTP 8883端口，等待IM服务的回调。
+- 监听HTTP 8885端口，等待IM服务的回调。
 - 监听WebSocket 8884端口，等待客户端的websocket连入。
 
 防火墙：
 - 公网放开8884的入访权限。
-- 开通与IM服务8883的入访权限。
+- 开通与IM服务8885的入访权限。
 - 开通与IM服务80端口的出访权限。
 
 ### 5. 安装OpenClaw野火IM插件
@@ -183,7 +188,7 @@ cp gateway/target/gateway-1.0.0.jar .
 # 3. 创建配置文件，也可以从项目获取
 mkdir -p config
 cat > config/application.properties << EOF
-server.port=8883
+server.port=8885
 websocket.port=8884
 im.url=http://your-im-server
 EOF
@@ -230,7 +235,7 @@ sudo systemctl status robot-gateway
 
 ```bash
 # 检查HTTP端口
-curl http://localhost:8883/actuator/health
+curl http://localhost:8885/actuator/health
 
 # 检查WebSocket端口（需要安装wscat）
 wscat -c ws://localhost:8884/robot/gateway
@@ -303,7 +308,7 @@ BotFather 命令处理      忽略消息
 
 ### Gateway (网关服务)
 - **功能**：WebSocket网关，支持多机器人动态连接
-- **端口**：HTTP 8883, WebSocket 8884
+- **端口**：HTTP 8885, WebSocket 8884
 - **配置**：`src/main/resources/application.properties`
 
 ### Client SDK (客户端SDK)
@@ -434,7 +439,7 @@ A: 确保 `lib/` 目录下有 `sdk-1.4.3.jar` 和 `common-1.4.3.jar`
 
 ### Q: Gateway无法启动
 A:
-1. 检查端口是否被占用（8883, 8884）
+1. 检查端口是否被占用（8885, 8884）
 2. 确保IM服务地址配置正确
 3. 查看日志错误信息
 
