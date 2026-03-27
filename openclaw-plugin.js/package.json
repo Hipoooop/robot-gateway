@@ -1,6 +1,6 @@
 {
-  "name": "@wildfirechat/openclaw-plugin",
-  "version": "1.0.4",
+  "name": "@wildfirechat/openclaw-wf",
+  "version": "1.0.5",
   "description": "Wildfire IM channel plugin for OpenClaw",
   "license": "MIT",
   "author": "Wildfire IM Team",
@@ -21,7 +21,7 @@
       "./dist/index.js"
     ],
     "channel": {
-      "id": "wildfire",
+      "id": "openclaw-wf",
       "label": "Wildfire IM",
       "selectionLabel": "Wildfire IM",
       "docsPath": "/channels/wildfire",
@@ -42,7 +42,7 @@
     "@wildfirechat/server-sdk": "^1.0.2"
   },
   "peerDependencies": {
-    "openclaw": "*"
+    "openclaw": ">=2026.2.26"
   },
   "peerDependenciesMeta": {
     "openclaw": {
