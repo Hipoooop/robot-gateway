@@ -38,8 +38,8 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@wildfirechat/robot-gateway-client-sdk": "^1.0.3",
-    "@wildfirechat/server-sdk": "^1.0.0"
+    "@wildfirechat/robot-gateway-client-sdk": "^1.0.4",
+    "@wildfirechat/server-sdk": "^1.0.2"
   },
   "peerDependencies": {
     "openclaw": "*"
