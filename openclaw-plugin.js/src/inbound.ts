@@ -2,6 +2,9 @@
  * Handle incoming messages from Wildfire IM
  */
 
+import { randomUUID } from "node:crypto";
+import { mkdir, unlink, writeFile } from "node:fs/promises";
+import path from "node:path";
 import type { WildfireConfig } from "./config.js";
 // @ts-ignore - runtime may not be fully typed
 import { shouldRespondToGroupMessage } from "./utils.js";
@@ -16,6 +19,7 @@ import {
 
 // Message type constants
 const MESSAGE_TYPE_TEXT = 1;
+const MESSAGE_TYPE_VOICE = 2;
 const MESSAGE_TYPE_IMAGE = 3;
 const MESSAGE_TYPE_VIDEO = 4;
 const MESSAGE_TYPE_FILE = 5;
@@ -57,7 +61,25 @@ export async function handleIncomingMessage(
   }
 
   const isGroup = conv.type === CONV_TYPE_GROUP || conv.type === CONV_TYPE_CHANNEL;
-  const text = extractTextContent(payload);
+  const { text, mediaUrl } = extractPayloadInfo(payload);
+
+  api.logger?.info?.(
+    `[wildfire-inbound] message received: sender=${sender}, convType=${conv.type}, target=${conv.target}, payloadType=${payloadType}, textPreview=${safePreview(text)}, mediaUrl=${mediaUrl || ""}`
+  );
+  api.logger?.debug?.(
+    `[wildfire-inbound] payload snapshot: ${JSON.stringify({
+      type: payload?.type,
+      searchableContent: payload?.searchableContent,
+      content: payload?.content,
+      remoteMediaUrl: payload?.remoteMediaUrl,
+      mediaUrl: payload?.mediaUrl,
+      remoteUrl: payload?.remoteUrl,
+      url: payload?.url,
+      extra: payload?.extra,
+      duration: payload?.duration,
+      keys: Object.keys(payload || {}),
+    })}`
+  );
 
   // Check if should respond (group filtering)
   if (isGroup && !shouldRespondToGroupMessage(text, data, config)) {
@@ -103,21 +125,20 @@ export async function handleIncomingMessage(
   const sessionSlot = new Promise<void>(resolve => { releaseSession = resolve; });
   sessionQueues.set(sessionKey, sessionSlot);
   await prevRequest.catch(() => {});
-
+  let mediaTempPath: string | undefined;
   try {
+    const storePath =
+      runtime.channel.session?.resolveStorePath?.(cfg?.session?.store, {
+        agentId: route.agentId,
+      }) ?? "";
 
-  const storePath =
-    runtime.channel.session?.resolveStorePath?.(cfg?.session?.store, {
-      agentId: route.agentId,
-    }) ?? "";
+    const chatType = isGroup ? "group" : "direct";
+    const fromLabel = String(sender);
+    const conversationLabel = isGroup ? `group:${conv.target}` : `user:${sender}`;
+    const senderId = String(sender);
+    const timestamp = Date.now();
 
-  const chatType = isGroup ? "group" : "direct";
-  const fromLabel = String(sender);
-  const conversationLabel = isGroup ? `group:${conv.target}` : `user:${sender}`;
-  const senderId = String(sender);
-  const timestamp = Date.now();
-
-  const ctxPayload = {
+  const ctxPayload: Record<string, any> = {
     Body: text,
     RawBody: text,
     From: isGroup ? `wildfire:group:${conv.target}` : `wildfire:user:${sender}`,
@@ -131,7 +152,7 @@ export async function handleIncomingMessage(
     Provider: "wildfire",
     Surface: "wildfire",
     // Use real message ID when available; fall back to timestamp+random to avoid same-ms collisions
-    MessageSid: `wildfire-${(data.messageId ?? data.msgId ?? data.mid) || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`}`,
+    MessageSid: `wildfire-${(data.messageId ?? data.msgId ?? data.mid) || randomUUID()}`,
     Timestamp: timestamp,
     OriginatingChannel: "wildfire",
     OriginatingTo: `wildfire:user:${sender}`,
@@ -144,6 +165,30 @@ export async function handleIncomingMessage(
       messageType: payloadType,
     },
   };
+
+  // Download remote media to a local temp file so openclaw can read it via MediaPath.
+  // openclaw expects MediaPath to be a local filesystem path, not a remote URL.
+  if (mediaUrl) {
+    const downloaded = await downloadMediaToTemp(mediaUrl, payloadType, api.logger);
+    if (downloaded) {
+      mediaTempPath = downloaded.localPath;
+      ctxPayload.MediaPath = downloaded.localPath;
+      ctxPayload.MediaUrl = downloaded.localPath;   // legacy alias — must equal MediaPath
+      ctxPayload.MediaType = downloaded.contentType;
+      api.logger?.info?.(
+        `[wildfire-inbound] media downloaded: remoteUrl=${mediaUrl}, localPath=${downloaded.localPath}, contentType=${downloaded.contentType}`
+      );
+    } else {
+      api.logger?.warn?.(`[wildfire-inbound] media download failed, dispatching without media: remoteUrl=${mediaUrl}`);
+    }
+  }
+
+  api.logger?.info?.(
+    `[wildfire-inbound] dispatch ctx: sessionKey=${sessionKey}, bodyPreview=${safePreview(String(ctxPayload.Body || ""))}, MediaPath=${ctxPayload.MediaPath || ""}, MediaType=${ctxPayload.MediaType || ""}`
+  );
+  api.logger?.debug?.(
+    `[wildfire-inbound] dispatch ctx keys: ${Object.keys(ctxPayload).join(",")}`
+  );
 
   // Record session
   if (runtime.channel.session?.recordInboundSession) {
@@ -174,7 +219,7 @@ export async function handleIncomingMessage(
   }
 
   // 生成唯一的 streamId 用于流式消息（每条用户消息有独立的流）
-  const streamId = `stream-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const streamId = `stream-${randomUUID()}`;
   let finalText = "";
   let hasCompleted = false;
 
@@ -244,9 +289,13 @@ export async function handleIncomingMessage(
     if (sessionQueues.get(sessionKey) === sessionSlot) {
       sessionQueues.delete(sessionKey);
     }
+    if (mediaTempPath) {
+      unlink(mediaTempPath).catch((e: any) =>
+        api.logger?.warn?.(`[wildfire-inbound] temp file cleanup failed: ${e.message}`)
+      );
+    }
   }
 }
-
 /**
  * Send streaming reply back to Wildfire IM
  * 
@@ -313,63 +362,112 @@ async function sendStreamingReply(
 }
 
 /**
- * Send reply back to Wildfire IM
+ * Extract text and optional media URL from payload
  */
-async function sendReply(
-  sender: string,
-  conv: { type: number; target: string; line: number },
-  text: string,
-  api?: any
-): Promise<void> {
-  api?.logger?.debug?.(`[wildfire-debug] sendReply called, text=${text?.substring(0, 30)}`);
-  const client = getClient();
-  if (!client) {
-    api?.logger?.error?.("[wildfire-debug] client not connected");
-    throw new Error("Wildfire client not connected");
-  }
+function extractPayloadInfo(payload: any): { text: string; mediaUrl?: string } {
+  const mediaUrl = pickMediaUrl(payload);
 
-  const conversation: Conversation = {
-    type: conv.type,
-    target: conv.type === 0 ? sender : conv.target,
-    line: conv.line,
-  };
-
-  api?.logger?.debug?.(`[wildfire-debug] conversation: type=${conv.type}, target=${conversation.target}, line=${conv.line}`);
-
-  const content = new TextMessageContent();
-  content.content = text;
-
-  api?.logger?.debug?.(`[wildfire-debug] content encoded, sending...`);
-  
-  try {
-    const result = await client.sendMessage(conversation, content.encode());
-    api?.logger?.debug?.(`[wildfire-debug] sendMessage result: success=${result.isSuccess()}, msg=${result.getMsg()}`);
-    
-    if (!result.isSuccess()) {
-      throw new Error(result.getMsg());
+  switch (payload.type) {
+    case MESSAGE_TYPE_TEXT:
+      return { text: payload.searchableContent || payload.content || "" };
+    case MESSAGE_TYPE_VOICE: {
+      const duration = payload.duration ? ` ${payload.duration}s` : "";
+      return {
+        text: `[语音${duration}]`,
+        mediaUrl,
+      };
     }
-    api?.logger?.debug?.(`[wildfire-debug] message sent successfully`);
-  } catch (e: any) {
-    api?.logger?.error?.(`[wildfire-debug] sendMessage error: ${e.message}`);
-    throw e;
+    case MESSAGE_TYPE_IMAGE:
+      return { text: "[图片]", mediaUrl };
+    case MESSAGE_TYPE_VIDEO:
+      return { text: "[视频]", mediaUrl };
+    case MESSAGE_TYPE_FILE:
+      return { text: `[文件] ${payload.searchableContent || ""}`, mediaUrl };
+    default:
+      return { text: `[消息类型:${payload.type}]` };
   }
 }
 
+function pickMediaUrl(payload: any): string | undefined {
+  const candidates = [
+    payload?.remoteMediaUrl,
+    payload?.mediaUrl,
+    payload?.remoteUrl,
+    payload?.url,
+  ];
+
+  const normalized = candidates
+    .map(v => (typeof v === "string" ? v.trim() : ""))
+    .find(v => !!v);
+
+  return normalized || undefined;
+}
+
+function safePreview(value: string, maxLen = 120): string {
+  if (!value) return "";
+  const compact = value.replace(/\s+/g, " ").trim();
+  if (compact.length <= maxLen) return compact;
+  return `${compact.slice(0, maxLen)}...`;
+}
+
+/** Maps a remote media URL to a best-guess MIME type using the URL extension. */
+function mimeFromUrl(url: string, payloadType: number): string {
+  const ext = url.split("?")[0].split(".").pop()?.toLowerCase() ?? "";
+  const map: Record<string, string> = {
+    amr: "audio/amr",
+    mp3: "audio/mpeg",
+    m4a: "audio/mp4",
+    ogg: "audio/ogg",
+    opus: "audio/opus",
+    aac: "audio/aac",
+    wav: "audio/wav",
+    flac: "audio/flac",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png",
+    gif: "image/gif",
+    webp: "image/webp",
+    mp4: "video/mp4",
+    mov: "video/quicktime",
+  };
+  if (map[ext]) return map[ext];
+  if (payloadType === MESSAGE_TYPE_VOICE) return "audio/amr";
+  if (payloadType === MESSAGE_TYPE_IMAGE) return "image/jpeg";
+  if (payloadType === MESSAGE_TYPE_VIDEO) return "video/mp4";
+  return "application/octet-stream";
+}
+
 /**
- * Extract text content from payload
+ * Download a remote media URL to /tmp/openclaw/ so openclaw can access it as a local file.
+ * openclaw's MediaPath must be a local filesystem path in an allowed root directory.
  */
-function extractTextContent(payload: any): string {
-  switch (payload.type) {
-    case MESSAGE_TYPE_TEXT:
-      return payload.searchableContent || payload.content || "";
-    case MESSAGE_TYPE_IMAGE:
-      return "[图片]";
-    case MESSAGE_TYPE_VIDEO:
-      return "[视频]";
-    case MESSAGE_TYPE_FILE:
-      return `[文件] ${payload.searchableContent || ""}`;
-    default:
-      return `[消息类型:${payload.type}]`;
+async function downloadMediaToTemp(
+  remoteUrl: string,
+  payloadType: number,
+  logger?: any
+): Promise<{ localPath: string; contentType: string } | undefined> {
+  try {
+    const tmpDir = "/tmp/openclaw";
+    await mkdir(tmpDir, { recursive: true });
+
+    const urlPath = remoteUrl.split("?")[0];
+    const ext = urlPath.split(".").pop()?.toLowerCase() ?? "bin";
+    const safeExt = /^[a-z0-9]{1,8}$/.test(ext) ? ext : "bin";
+    const localPath = path.join(tmpDir, `wildfire-${randomUUID()}.${safeExt}`);
+
+    const resp = await fetch(remoteUrl);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status} ${resp.statusText}`);
+    const buf = Buffer.from(await resp.arrayBuffer());
+    await writeFile(localPath, buf);
+
+    const contentType =
+      resp.headers.get("content-type")?.split(";")[0].trim() ||
+      mimeFromUrl(remoteUrl, payloadType);
+
+    return { localPath, contentType };
+  } catch (e: any) {
+    logger?.warn?.(`[wildfire-inbound] downloadMediaToTemp failed for ${remoteUrl}: ${e.message}`);
+    return undefined;
   }
 }
 
