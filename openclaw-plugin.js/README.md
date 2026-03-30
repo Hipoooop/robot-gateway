@@ -43,6 +43,7 @@ openclaw restart
                   "gatewayUrl": "ws://your_gateway_host:8884/robot/gateway",
                   "robotId": "your robot id",
                   "robotSecret": "your robot secret",
+                  "asrServer": "http://your_asr_host:port/asr",
                   "requireMention": true,
                   "helpKeywords": "帮,请,分析,总结",
                   "whiteList": {
@@ -66,6 +67,7 @@ openclaw restart
 | `gatewayUrl` | 是 | 野火网关 WebSocket 地址 |
 | `robotId` | 是 | 机器人 ID |
 | `robotSecret` | 是 | 机器人密钥 |
+| `asrServer` | 否 | 语音转文字服务地址；配置后语音消息会先转文字再进入 openclaw |
 | `requireMention` | 否 | 群聊是否需要@机器人才回复，默认 `true` |
 | `helpKeywords` | 否 | 触发回复的关键词，逗号分隔 |
 | `whiteList.enabled` | 否 | 是否启用白名单，默认 `false` |

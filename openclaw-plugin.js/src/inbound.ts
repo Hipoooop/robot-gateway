@@ -137,38 +137,75 @@ export async function handleIncomingMessage(
     const conversationLabel = isGroup ? `group:${conv.target}` : `user:${sender}`;
     const senderId = String(sender);
     const timestamp = Date.now();
+    const asrServer = resolveAsrServer(config);
 
-  const ctxPayload: Record<string, any> = {
-    Body: text,
-    RawBody: text,
-    From: isGroup ? `wildfire:group:${conv.target}` : `wildfire:user:${sender}`,
-    To: isGroup ? `wildfire:group:${conv.target}` : `wildfire:user:${sender}`,
-    SessionKey: sessionKey,
-    AccountId: "default",
-    ChatType: chatType,
-    ConversationLabel: conversationLabel,
-    SenderName: fromLabel,
-    SenderId: senderId,
-    Provider: "wildfire",
-    Surface: "wildfire",
-    // Use real message ID when available; fall back to timestamp+random to avoid same-ms collisions
-    MessageSid: `wildfire-${(data.messageId ?? data.msgId ?? data.mid) || randomUUID()}`,
-    Timestamp: timestamp,
-    OriginatingChannel: "wildfire",
-    OriginatingTo: `wildfire:user:${sender}`,
-    CommandAuthorized: true,
-    _wildfire: {
-      accountId: "default",
-      isGroup,
-      senderId,
-      conversationId: conv.target,
-      messageType: payloadType,
-    },
-  };
+  // 生成唯一的 streamId 用于流式消息（每条用户消息有独立的流）
+  const streamId = `stream-${randomUUID()}`;
+  let finalText = "";
+  let hasCompleted = false;
+
+  // 先发送一个空的 generating 消息显示转圈等待，让客户端立即看到响应
+  try {
+    await sendStreamingReply(sender, conv, "...", streamId, "generating", api);
+  } catch (e: any) {
+    api.logger?.error?.(`[wildfire] initial stream failed: ${e.message}`);
+  }
+
+    let transcript: string | undefined;
+    if (payloadType === MESSAGE_TYPE_VOICE && mediaUrl && asrServer) {
+      transcript = await transcribeWithAsrServer({
+        asrServer,
+        mediaUrl,
+        logger: api.logger,
+      });
+      if (transcript) {
+        api.logger?.info?.(
+          `[wildfire-inbound] ASR transcript ready: len=${transcript.length}, preview=${safePreview(transcript)}`
+        );
+      } else {
+        api.logger?.warn?.("[wildfire-inbound] ASR transcript empty, fallback to voice placeholder text");
+      }
+    }
+
+    const bodyText = transcript || text;
+
+    const ctxPayload: Record<string, any> = {
+      Body: bodyText,
+      RawBody: bodyText,
+      From: isGroup ? `wildfire:group:${conv.target}` : `wildfire:user:${sender}`,
+      To: isGroup ? `wildfire:group:${conv.target}` : `wildfire:user:${sender}`,
+      SessionKey: sessionKey,
+      AccountId: "default",
+      ChatType: chatType,
+      ConversationLabel: conversationLabel,
+      SenderName: fromLabel,
+      SenderId: senderId,
+      Provider: "wildfire",
+      Surface: "wildfire",
+      // Use real message ID when available; fall back to UUID to avoid collisions
+      MessageSid: `wildfire-${(data.messageId ?? data.msgId ?? data.mid) || randomUUID()}`,
+      Timestamp: timestamp,
+      OriginatingChannel: "wildfire",
+      OriginatingTo: `wildfire:user:${sender}`,
+      CommandAuthorized: true,
+      _wildfire: {
+        accountId: "default",
+        isGroup,
+        senderId,
+        conversationId: conv.target,
+        messageType: payloadType,
+        mediaUrl: mediaUrl ?? null,
+      },
+    };
+
+    if (transcript) {
+      ctxPayload.Transcript = transcript;
+    }
 
   // Download remote media to a local temp file so openclaw can read it via MediaPath.
   // openclaw expects MediaPath to be a local filesystem path, not a remote URL.
-  if (mediaUrl) {
+  const shouldDownloadMedia = Boolean(mediaUrl) && !(payloadType === MESSAGE_TYPE_VOICE && transcript);
+  if (shouldDownloadMedia && mediaUrl) {
     const downloaded = await downloadMediaToTemp(mediaUrl, payloadType, api.logger);
     if (downloaded) {
       mediaTempPath = downloaded.localPath;
@@ -181,6 +218,10 @@ export async function handleIncomingMessage(
     } else {
       api.logger?.warn?.(`[wildfire-inbound] media download failed, dispatching without media: remoteUrl=${mediaUrl}`);
     }
+  }
+
+  if (payloadType === MESSAGE_TYPE_VOICE && !asrServer) {
+    api.logger?.debug?.("[wildfire-inbound] asrServer not configured; skip speech-to-text");
   }
 
   api.logger?.info?.(
@@ -216,18 +257,6 @@ export async function handleIncomingMessage(
       accountId: "default",
       direction: "inbound",
     });
-  }
-
-  // 生成唯一的 streamId 用于流式消息（每条用户消息有独立的流）
-  const streamId = `stream-${randomUUID()}`;
-  let finalText = "";
-  let hasCompleted = false;
-
-  // 先发送一个空的 generating 消息显示转圈等待
-  try {
-    await sendStreamingReply(sender, conv, "...", streamId, "generating", api);
-  } catch (e: any) {
-    api.logger?.error?.(`[wildfire] initial stream failed: ${e.message}`);
   }
 
   // Dispatch to OpenClaw - 使用真正的流式回复（onPartialReply）
@@ -408,6 +437,79 @@ function safePreview(value: string, maxLen = 120): string {
   const compact = value.replace(/\s+/g, " ").trim();
   if (compact.length <= maxLen) return compact;
   return `${compact.slice(0, maxLen)}...`;
+}
+
+function resolveAsrServer(config: WildfireConfig): string | undefined {
+  const asr = config.asrServer;
+  if (!asr || typeof asr !== "string") return undefined;
+  const trimmed = asr.trim();
+  return trimmed || undefined;
+}
+
+async function transcribeWithAsrServer(params: {
+  asrServer: string;
+  mediaUrl: string;
+  logger?: any;
+}): Promise<string | undefined> {
+  try {
+    const res = await fetch(params.asrServer, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "*/*",
+      },
+      body: JSON.stringify({
+        url: params.mediaUrl,
+        noReuse: false,
+        noLlm: false,
+      }),
+    });
+
+    if (!res.ok) {
+      params.logger?.warn?.(`[wildfire-inbound] ASR request failed: status=${res.status}`);
+      return undefined;
+    }
+
+    if (!res.body) {
+      const plainText = (await res.text()).trim();
+      return plainText || undefined;
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let pending = "";
+    let result = "";
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      pending += decoder.decode(value, { stream: true });
+      const lines = pending.split(/\r\n|\n|\r/g);
+      pending = lines.pop() || "";
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        if (trimmed.startsWith("data:")) {
+          result += trimmed.slice(5).trim();
+        } else {
+          result += trimmed;
+        }
+      }
+    }
+
+    if (pending.trim()) {
+      const tail = pending.trim();
+      result += tail.startsWith("data:") ? tail.slice(5).trim() : tail;
+    }
+
+    const cleaned = result.trim();
+    return cleaned || undefined;
+  } catch (e: any) {
+    params.logger?.warn?.(`[wildfire-inbound] ASR request error: ${e.message}`);
+    return undefined;
+  }
 }
 
 /** Maps a remote media URL to a best-guess MIME type using the URL extension. */

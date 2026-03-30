@@ -7,6 +7,7 @@ export interface WildfireConfig {
   gatewayUrl?: string;
   robotId?: string;
   robotSecret?: string;
+  asrServer?: string;
   requireMention?: boolean;
   helpKeywords?: string;
   accounts?: Record<string, WildfireConfig>;
@@ -32,6 +33,7 @@ export function getAccountConfig(api: any, accountId: string = "default"): Wildf
       gatewayUrl: account.gatewayUrl ?? cfg.gatewayUrl,
       robotId: account.robotId ?? cfg.robotId,
       robotSecret: account.robotSecret ?? cfg.robotSecret,
+      asrServer: account.asrServer ?? cfg.asrServer,
       requireMention: account.requireMention ?? cfg.requireMention ?? true,
       helpKeywords: account.helpKeywords ?? cfg.helpKeywords ?? "帮,请,分析,总结",
       whiteList: {
@@ -50,6 +52,7 @@ export function getAccountConfig(api: any, accountId: string = "default"): Wildf
       gatewayUrl: cfg.gatewayUrl,
       robotId: cfg.robotId,
       robotSecret: cfg.robotSecret,
+      asrServer: cfg.asrServer,
       requireMention: cfg.requireMention ?? true,
       helpKeywords: cfg.helpKeywords ?? "帮,请,分析,总结",
       whiteList: {

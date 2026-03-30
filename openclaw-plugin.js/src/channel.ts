@@ -179,6 +179,7 @@ export const WildfireChannelPlugin = {
 
         let remoteUrl: string;
         let fileName: string;
+        let fileSize: number = 0;
 
         // Check if it's a local file path or remote URL
         if (mediaUrl.startsWith('http://') || mediaUrl.startsWith('https://')) {
@@ -198,7 +199,8 @@ export const WildfireChannelPlugin = {
           let fileData: Buffer;
           try {
             fileData = readFileSync(mediaUrl);
-            console.log(`[wildfire] file read success, size=${fileData.length} bytes`);
+            fileSize = fileData.length;
+            console.log(`[wildfire] file read success, size=${fileSize} bytes`);
           } catch (readErr: any) {
             console.error(`[wildfire] file read failed: ${readErr.message}`);
             return { ok: false, error: new Error(`Failed to read file: ${readErr.message}`) };
@@ -239,7 +241,7 @@ export const WildfireChannelPlugin = {
           payload = videoContent.encode();
         } else {
           console.log(`[wildfire] sending as file`);
-          const fileContent = new FileMessageContent(null, remoteUrl, fileName, 0);
+          const fileContent = new FileMessageContent(null, remoteUrl, fileName, fileSize);
           payload = fileContent.encode();
         }
 

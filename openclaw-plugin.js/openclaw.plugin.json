@@ -30,6 +30,11 @@
         "description": "Robot secret",
         "default": ""
       },
+      "asrServer": {
+        "type": "string",
+        "description": "Optional ASR HTTP endpoint for voice-to-text, e.g. http://host:port/asr",
+        "default": ""
+      },
       "requireMention": {
         "type": "boolean",
         "default": true,
@@ -64,6 +69,10 @@
               "type": "string",
               "default": ""
             },
+            "asrServer": {
+              "type": "string",
+              "default": ""
+            },
             "requireMention": {
               "type": "boolean",
               "default": true
@@ -84,6 +93,10 @@
     "robotSecret": {
       "label": "Robot Secret",
       "sensitive": true
+    },
+    "asrServer": {
+      "label": "ASR Server",
+      "placeholder": "http://localhost:8080/asr"
     },
     "requireMention": {
       "label": "Require Mention in Group"
