@@ -27,9 +27,6 @@ export async function startClient(api: any, config: WildfireConfig): Promise<voi
     return;
   }
 
-  // Initialize server SDK for message models
-  initServerSdk("http://localhost:18080", "dummy");
-
   client = new RobotServiceClient(
     config.gatewayUrl!,
     {
