@@ -165,6 +165,11 @@ public class RobotServiceClient {
                 new com.google.gson.reflect.TypeToken<IMResult<Void>>(){}.getType());
     }
 
+    public IMResult<Void> updateMessage(long messageId, MessagePayload payload, boolean distribute) {
+        return invoke("updateMessage", Arrays.asList(messageId, payload, distribute),
+                new com.google.gson.reflect.TypeToken<IMResult<Void>>(){}.getType());
+    }
+
     // ==================== 用户相关 ====================
 
     public IMResult<InputOutputUserInfo> getUserInfo(String userId) {
@@ -195,6 +200,11 @@ public class RobotServiceClient {
     public IMResult<OutputApplicationUserInfo> applicationGetUserInfo(String userId) {
         return invoke("applicationGetUserInfo", Arrays.asList(userId),
                 new com.google.gson.reflect.TypeToken<IMResult<OutputApplicationUserInfo>>(){}.getType());
+    }
+
+    public IMResult<String> sendConferenceRequest(String userId, String clientId, String request, long sessionId, String roomId, String data, boolean advance) {
+        return invoke("sendConferenceRequest", Arrays.asList(userId, clientId, request, sessionId, roomId, data, advance),
+                new com.google.gson.reflect.TypeToken<IMResult<String>>(){}.getType());
     }
 
     // ==================== 机器人资料 ====================
