@@ -82,6 +82,11 @@ type OutputGroupMemberList struct {
 	Members []PojoGroupMember `json:"members"`
 }
 
+// OutputUserInfoList represents a list of user information.
+type OutputUserInfoList struct {
+	UserInfos []InputOutputUserInfo `json:"userInfos"`
+}
+
 // RecallMessageData represents recall message data.
 type RecallMessageData struct {
 	MessageID int64 `json:"messageId"`

@@ -182,6 +182,16 @@ public class RobotServiceClient {
                 new com.google.gson.reflect.TypeToken<IMResult<InputOutputUserInfo>>(){}.getType());
     }
 
+    public IMResult<OutputUserInfoList> getUserInfoByEmail(String email) {
+        return invoke("getUserInfoByEmail", Arrays.asList(email),
+                new com.google.gson.reflect.TypeToken<IMResult<OutputUserInfoList>>(){}.getType());
+    }
+
+    public IMResult<OutputUserInfoList> getBatchUsers(List<String> userIds) {
+        return invoke("getBatchUsers", Arrays.asList(userIds),
+                new com.google.gson.reflect.TypeToken<IMResult<OutputUserInfoList>>(){}.getType());
+    }
+
     public IMResult<OutputApplicationUserInfo> applicationGetUserInfo(String userId) {
         return invoke("applicationGetUserInfo", Arrays.asList(userId),
                 new com.google.gson.reflect.TypeToken<IMResult<OutputApplicationUserInfo>>(){}.getType());

@@ -174,6 +174,24 @@ export class RobotServiceClient {
     }
 
     /**
+     * 通过邮箱获取用户信息
+     * @param {string} email - 邮箱地址
+     * @returns {Promise<IMResult>}
+     */
+    async getUserInfoByEmail(email) {
+        return this.invoke('getUserInfoByEmail', [email]);
+    }
+
+    /**
+     * 批量获取用户信息
+     * @param {Array} userIds - 用户ID列表
+     * @returns {Promise<IMResult>}
+     */
+    async getBatchUsers(userIds) {
+        return this.invoke('getBatchUsers', [userIds]);
+    }
+
+    /**
      * 应用获取用户信息
      * @param {string} userId - 用户ID
      * @returns {Promise<IMResult>}

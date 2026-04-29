@@ -199,6 +199,18 @@ func (c *RobotServiceClient) GetUserInfoByName(name string) (*protocol.IMResult[
 	return invoke[protocol.InputOutputUserInfo](c, "getUserInfoByName", params)
 }
 
+// GetUserInfoByEmail gets user information by email.
+func (c *RobotServiceClient) GetUserInfoByEmail(email string) (*protocol.IMResult[protocol.OutputUserInfoList], error) {
+	params := []interface{}{email}
+	return invoke[protocol.OutputUserInfoList](c, "getUserInfoByEmail", params)
+}
+
+// GetBatchUsers gets user information in batch.
+func (c *RobotServiceClient) GetBatchUsers(userIDs []string) (*protocol.IMResult[protocol.OutputUserInfoList], error) {
+	params := []interface{}{userIDs}
+	return invoke[protocol.OutputUserInfoList](c, "getBatchUsers", params)
+}
+
 // ApplicationGetUserInfo gets user information as an application.
 func (c *RobotServiceClient) ApplicationGetUserInfo(userID string) (*protocol.IMResult[protocol.OutputApplicationUserInfo], error) {
 	params := []interface{}{userID}
