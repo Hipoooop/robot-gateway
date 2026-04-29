@@ -74,11 +74,14 @@ class RobotGatewayClient extends WebSocketClient {
         // 尝试解析为推送消息
         try {
             PushMessage push = gson.fromJson(message, PushMessage.class);
-            if ("message".equals(push.getType()) || "event".equals(push.getType())) {
+            if ("message".equals(push.getType())) {
                 if (messageHandler != null) {
                     messageHandler.onMessage(push);
                 }
-                return;
+            } else if("event".equals(push.getType())) {
+                if (messageHandler != null) {
+                    messageHandler.onConferenceEvent(push.getEvent());
+                }
             }
         } catch (JsonSyntaxException e) {
             LOG.error("Failed to parse message: {}", e.getMessage());

@@ -14,4 +14,10 @@ public class Controller {
         mService.onReceiveMessage(messageData);
         return "ok";
     }
+
+    @PostMapping(value = "/robot/recvmsg/conference", produces = "application/json;charset=UTF-8"   )
+    public Object recvConferenceEvent(@RequestBody String event, @RequestParam(name = "rid", required = false) String robotId) {
+        mService.onReceiveConferenceEvent(event, robotId);
+        return "ok";
+    }
 }

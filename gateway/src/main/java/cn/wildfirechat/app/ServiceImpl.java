@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.util.StringUtils;
 
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
@@ -114,6 +115,34 @@ public class ServiceImpl implements Service {
         } else {
             LOG.error("Failed to send message {} to robot {} ({} connection(s))", 
                     messageData.getMessageId(), targetRobotId, connectionCount);
+        }
+    }
+
+    @Override
+    @Async("asyncExecutor")
+    public void onReceiveConferenceEvent(String event, String targetRobotId) {
+        LOG.info("Received conference {} from robot: {}", event, targetRobotId);
+
+        if (StringUtils.isEmpty(targetRobotId)) {
+            LOG.warn("robotId is empty, ignore it");
+            return;
+        }
+
+        // 网关业务：转发给对应的机器人客户端
+        int connectionCount = sessionManager.getConnectionCount(targetRobotId);
+        LOG.info("Robot {} has {} active connection(s)", targetRobotId, connectionCount);
+
+        if (connectionCount == 0) {
+            LOG.warn("Robot {} not connected, conference event {} not delivered", targetRobotId, event);
+            return;
+        }
+
+        boolean sent = sessionManager.sendMessageToRobot(targetRobotId, PushMessage.event(event));
+        if (sent) {
+            LOG.info("Send success");
+        } else {
+            LOG.error("Failed to send converence event {} to robot {} ({} connection(s))",
+                    event, targetRobotId, connectionCount);
         }
     }
 

@@ -15,6 +15,13 @@ public interface MessageHandler {
     void onMessage(PushMessage message);
 
     /**
+     * 处理接收到的会议事件
+     * @param event 会议事件
+     */
+    default void onConferenceEvent(String event) {
+    }
+
+    /**
      * 处理连接事件
      * @param connected 是否连接成功
      */

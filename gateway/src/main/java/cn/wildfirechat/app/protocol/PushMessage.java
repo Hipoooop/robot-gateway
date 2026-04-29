@@ -40,10 +40,9 @@ public class PushMessage {
         return new PushMessage("message", data);
     }
 
-    public static PushMessage event(String event, Object extra) {
+    public static PushMessage event(String event) {
         PushMessage msg = new PushMessage("event", null);
         msg.setEvent(event);
-        msg.setExtra(extra);
         return msg;
     }
 
