@@ -8,7 +8,6 @@ import com.google.gson.JsonSyntaxException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
@@ -46,7 +45,6 @@ public class RobotGatewayEndpoint extends TextWebSocketHandler {
     }
 
     @Override
-    @Async("asyncExecutor") // 使用异步线程池处理消息
     protected void handleTextMessage(WebSocketSession session, TextMessage message) {
         String payload = message.getPayload();
         String sessionId = session.getId();

@@ -189,6 +189,12 @@ public class SessionManager {
                 return true;
             } catch (IOException e) {
                 LOG.error("Failed to send message to session {}: {}", session.getId(), e.getMessage());
+                // 主动关闭 session，防止 Tomcat WebSocket 底层 socket 泄漏导致 CLOSE_WAIT
+                try {
+                    session.close();
+                } catch (IOException ex) {
+                    LOG.error("Failed to close session {} after send error: {}", session.getId(), ex.getMessage());
+                }
                 return false;
             }
         }
