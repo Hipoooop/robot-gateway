@@ -1,0 +1,108 @@
+{
+  "id": "openclaw-wf",
+  "name": "Wildfire IM",
+  "version": "1.0.0",
+  "description": "Wildfire IM channel for OpenClaw",
+  "author": "Wildfire IM Team",
+  "channels": [
+    "wildfire"
+  ],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "enabled": {
+        "type": "boolean",
+        "default": true
+      },
+      "gatewayUrl": {
+        "type": "string",
+        "description": "Wildfire IM gateway WebSocket URL, e.g. ws://localhost:8884/robot/gateway",
+        "default": ""
+      },
+      "robotId": {
+        "type": "string",
+        "description": "Robot ID",
+        "default": ""
+      },
+      "robotSecret": {
+        "type": "string",
+        "description": "Robot secret",
+        "default": ""
+      },
+      "asrServer": {
+        "type": "string",
+        "description": "Optional ASR HTTP endpoint for voice-to-text, e.g. http://host:port/asr",
+        "default": ""
+      },
+      "requireMention": {
+        "type": "boolean",
+        "default": true,
+        "description": "Whether replies in groups require mentioning the robot"
+      },
+      "helpKeywords": {
+        "type": "string",
+        "default": "帮,请,分析,总结",
+        "description": "Comma-separated keywords that trigger bot response in groups"
+      },
+      "accounts": {
+        "type": "object",
+        "description": "Multi-account configuration keyed by accountId",
+        "default": {},
+        "additionalProperties": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "gatewayUrl": {
+              "type": "string",
+              "default": ""
+            },
+            "robotId": {
+              "type": "string",
+              "default": ""
+            },
+            "robotSecret": {
+              "type": "string",
+              "default": ""
+            },
+            "asrServer": {
+              "type": "string",
+              "default": ""
+            },
+            "requireMention": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        }
+      }
+    }
+  },
+  "uiHints": {
+    "gatewayUrl": {
+      "label": "Gateway URL",
+      "placeholder": "ws://localhost:8884/robot/gateway"
+    },
+    "robotId": {
+      "label": "Robot ID"
+    },
+    "robotSecret": {
+      "label": "Robot Secret",
+      "sensitive": true
+    },
+    "asrServer": {
+      "label": "ASR Server",
+      "placeholder": "http://localhost:8080/asr"
+    },
+    "requireMention": {
+      "label": "Require Mention in Group"
+    },
+    "helpKeywords": {
+      "label": "Help Keywords"
+    }
+  }
+}
