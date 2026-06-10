@@ -30,14 +30,54 @@ export const WildfireChannelPlugin = {
   },
 
   config: {
-    // Single account - always returns default
+    // Multi-account: enumerate all configured account IDs
     listAccountIds: (cfg: any) => {
-      if (cfg?.enabled === false) return [];
+      const wildfireCfg = cfg?.channels?.wildfire;
+      if (!wildfireCfg || wildfireCfg.enabled === false) return [];
+
+      // If multi-account config exists, return its keys
+      if (wildfireCfg.accounts && typeof wildfireCfg.accounts === "object") {
+        return Object.keys(wildfireCfg.accounts).filter(
+          (id: string) => wildfireCfg.accounts[id]?.enabled !== false,
+        );
+      }
+
+      // Legacy single-account config
       return ["default"];
     },
-    resolveAccount: (cfg: any, accountId?: string) => {
-      if (accountId && accountId !== "default") return null;
-      return cfg || null;
+
+    // Resolve merged account config with top-level fallback
+    resolveAccount: (cfg: any, accountId?: string | null) => {
+      const id = accountId || "default";
+      const wildfireCfg = cfg?.channels?.wildfire;
+      if (!wildfireCfg) return null;
+
+      // If multi-account: merge account-level over top-level defaults
+      if (wildfireCfg.accounts?.[id]) {
+        const account = wildfireCfg.accounts[id];
+        if (account.enabled === false) return null;
+        return {
+          ...wildfireCfg,
+          ...account,
+          accounts: wildfireCfg.accounts, // preserve accounts map
+          gatewayUrl: account.gatewayUrl ?? wildfireCfg.gatewayUrl,
+          robotId: account.robotId ?? wildfireCfg.robotId,
+          robotSecret: account.robotSecret ?? wildfireCfg.robotSecret,
+          asrServer: account.asrServer ?? wildfireCfg.asrServer,
+          requireMention:
+            account.requireMention ?? wildfireCfg.requireMention ?? true,
+          helpKeywords:
+            account.helpKeywords ?? wildfireCfg.helpKeywords ?? "帮,请,分析,总结",
+        };
+      }
+
+      // Legacy: return top-level config for "default" only
+      if (id === "default") {
+        if (wildfireCfg.enabled === false) return null;
+        return wildfireCfg;
+      }
+
+      return null;
     },
   },
 
@@ -106,7 +146,7 @@ export const WildfireChannelPlugin = {
     }) => {
       console.log(`[wildfire] sendText called: to=${to}, text=${text?.substring(0, 50)}`);
       
-      const client = getConnectedClient();
+      const client = getConnectedClient(accountId);
       if (!client) {
         console.error("[wildfire] client not found");
         return { ok: false, error: new Error("Wildfire not connected") };
@@ -156,7 +196,7 @@ export const WildfireChannelPlugin = {
         return { ok: false, error: new Error("mediaUrl is required") };
       }
       
-      const client = getConnectedClient();
+      const client = getConnectedClient(accountId);
       if (!client) {
         console.error(`[wildfire] client not connected`);
         return { ok: false, error: new Error("Wildfire not connected") };

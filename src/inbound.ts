@@ -37,7 +37,8 @@ const sessionQueues = new Map<string, Promise<void>>();
 export async function handleIncomingMessage(
   api: any,
   message: any,
-  config: WildfireConfig
+  config: WildfireConfig,
+  accountId: string,
 ): Promise<void> {
   const runtime = api.runtime;
   if (!runtime?.channel?.reply?.dispatchReplyWithBufferedBlockDispatcher) {
@@ -82,7 +83,16 @@ export async function handleIncomingMessage(
   );
 
   // Check if should respond (group filtering)
-  if (isGroup && !shouldRespondToGroupMessage(text, data, config)) {
+  if (
+    isGroup &&
+    !shouldRespondToGroupMessage(
+      text,
+      data,
+      config.robotId,
+      config.requireMention,
+      config.helpKeywords,
+    )
+  ) {
     return;
   }
 
@@ -93,7 +103,7 @@ export async function handleIncomingMessage(
     // Send denied message
     try {
       const deniedMessage = config.whiteList?.deniedMessage || "不允许使用";
-      await sendDirectReply(sender, conv, deniedMessage, api);
+      await sendDirectReply(sender, conv, deniedMessage, api, accountId);
     } catch (e: any) {
       api.logger?.error?.(`[wildfire] failed to send denied message: ${e.message}`);
     }
@@ -113,7 +123,7 @@ export async function handleIncomingMessage(
     runtime.channel.routing?.resolveAgentRoute?.({
       cfg,
       channel: "wildfire",
-      accountId: "default",
+      accountId,
       peer: routePeer,
     }) ?? { agentId: "main", sessionKey: baseSessionKey };
 
@@ -146,7 +156,7 @@ export async function handleIncomingMessage(
 
   // 先发送一个空的 generating 消息显示转圈等待，让客户端立即看到响应
   try {
-    await sendStreamingReply(sender, conv, "...", streamId, "generating", api);
+    await sendStreamingReply(sender, conv, "...", streamId, "generating", api, accountId);
   } catch (e: any) {
     api.logger?.error?.(`[wildfire] initial stream failed: ${e.message}`);
   }
@@ -175,7 +185,7 @@ export async function handleIncomingMessage(
       From: isGroup ? `wildfire:group:${conv.target}` : `wildfire:user:${sender}`,
       To: isGroup ? `wildfire:group:${conv.target}` : `wildfire:user:${sender}`,
       SessionKey: sessionKey,
-      AccountId: "default",
+      AccountId: accountId,
       ChatType: chatType,
       ConversationLabel: conversationLabel,
       SenderName: fromLabel,
@@ -189,7 +199,7 @@ export async function handleIncomingMessage(
       OriginatingTo: `wildfire:user:${sender}`,
       CommandAuthorized: true,
       _wildfire: {
-        accountId: "default",
+        accountId,
         isGroup,
         senderId,
         conversationId: conv.target,
@@ -242,7 +252,7 @@ export async function handleIncomingMessage(
             sessionKey,
             channel: "wildfire",
             to: `wildfire:user:${senderId}`,
-            accountId: "default",
+            accountId,
           }
         : undefined,
       onRecordError: (err: unknown) =>
@@ -254,7 +264,7 @@ export async function handleIncomingMessage(
   if (runtime.channel.activity?.record) {
     runtime.channel.activity.record({
       channel: "wildfire",
-      accountId: "default",
+      accountId,
       direction: "inbound",
     });
   }
@@ -286,7 +296,7 @@ export async function handleIncomingMessage(
 
           try {
             // 发送 generating 消息更新同一条消息
-            await sendStreamingReply(sender, conv, payload.text, streamId, "generating", api);
+            await sendStreamingReply(sender, conv, payload.text, streamId, "generating", api, accountId);
           } catch (e: any) {
             api.logger?.error?.(`[wildfire] stream update failed: ${e.message}`);
           }
@@ -301,13 +311,13 @@ export async function handleIncomingMessage(
       
       // 如果有内容就发送 completed，否则发送错误提示
       const textToSend = finalText || "(no response)";
-      await sendStreamingReply(sender, conv, textToSend, streamId, "completed", api);
+      await sendStreamingReply(sender, conv, textToSend, streamId, "completed", api, accountId);
     }
   } catch (err: any) {
     api.logger?.error?.(`[wildfire] dispatch failed: ${err.message}`);
     try {
       const errorText = `Processing failed: ${err.message.slice(0, 80)}`;
-      await sendStreamingReply(sender, conv, errorText, streamId, "completed", api);
+      await sendStreamingReply(sender, conv, errorText, streamId, "completed", api, accountId);
     } catch {
       // ignore secondary send errors
     }
@@ -339,10 +349,11 @@ async function sendStreamingReply(
   text: string,
   streamId: string,
   state: "start" | "generating" | "completed",
-  api?: any
+  api?: any,
+  accountId?: string,
 ): Promise<void> {
   api?.logger?.debug?.(`[wildfire-debug] sendStreamingReply called, state=${state}, text=${text?.substring(0, 30)}`);
-  const client = getClient();
+  const client = getClient(accountId);
   if (!client) {
     api?.logger?.error?.("[wildfire-debug] client not connected");
     throw new Error("Wildfire client not connected");
@@ -580,10 +591,11 @@ async function sendDirectReply(
   sender: string,
   conv: { type: number; target: string; line: number },
   text: string,
-  api?: any
+  api?: any,
+  accountId?: string,
 ): Promise<void> {
   api?.logger?.debug?.(`[wildfire-debug] sendDirectReply called, text=${text?.substring(0, 30)}`);
-  const client = getClient();
+  const client = getClient(accountId);
   if (!client) {
     api?.logger?.error?.("[wildfire-debug] client not connected");
     throw new Error("Wildfire client not connected");

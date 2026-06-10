@@ -2,41 +2,47 @@
  * Utility functions
  */
 
-import type { WildfireConfig } from "./config.js";
-
 /**
  * Check if should respond to a group message
+ *
+ * @param text        The message text
+ * @param messageData Raw message data with mention info
+ * @param robotId     The robot ID to check mentions against
+ * @param requireMention Whether @-mention is required (default true)
+ * @param helpKeywords Comma-separated trigger keywords (default "帮,请,分析,总结")
  */
 export function shouldRespondToGroupMessage(
   text: string,
   messageData: any,
-  config: WildfireConfig
+  robotId?: string,
+  requireMention: boolean = true,
+  helpKeywords: string = "帮,请,分析,总结",
 ): boolean {
   // Strategy 1: Check if mentioned
-  if (config.requireMention !== false) {
-    if (isMentioned(messageData, config.robotId)) {
+  if (requireMention !== false) {
+    if (isMentioned(messageData, robotId)) {
       return true;
     }
   }
-  
+
   // Strategy 2: Check question mark
   if (/.*[？?]$/.test(text)) {
     return true;
   }
-  
+
   // Strategy 3: Check help keywords
-  const keywords = (config.helpKeywords || "帮,请,分析,总结").split(",").map((k: string) => k.trim()).filter(Boolean);
+  const keywords = helpKeywords.split(",").map((k: string) => k.trim()).filter(Boolean);
   for (const keyword of keywords) {
     if (text.includes(keyword)) {
       return true;
     }
   }
-  
+
   // If requireMention is true and not met, don't respond
-  if (config.requireMention !== false) {
+  if (requireMention !== false) {
     return false;
   }
-  
+
   return true;
 }
 
