@@ -350,7 +350,7 @@ async function sendStreamingReply(
   streamId: string,
   state: "start" | "generating" | "completed",
   api?: any,
-  accountId?: string,
+  accountId: string,
 ): Promise<void> {
   api?.logger?.debug?.(`[wildfire-debug] sendStreamingReply called, state=${state}, text=${text?.substring(0, 30)}`);
   const client = getClient(accountId);
@@ -592,7 +592,7 @@ async function sendDirectReply(
   conv: { type: number; target: string; line: number },
   text: string,
   api?: any,
-  accountId?: string,
+  accountId: string,
 ): Promise<void> {
   api?.logger?.debug?.(`[wildfire-debug] sendDirectReply called, text=${text?.substring(0, 30)}`);
   const client = getClient(accountId);
