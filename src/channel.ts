@@ -139,10 +139,12 @@ export const WildfireChannelPlugin = {
       to,
       text,
       accountId,
+      extra,
     }: {
       to: string;
       text: string;
       accountId?: string;
+      extra?: string;
     }) => {
       console.log(`[wildfire] sendText called: to=${to}, text=${text?.substring(0, 50)}`);
       
@@ -172,8 +174,13 @@ export const WildfireChannelPlugin = {
         const content = new TextMessageContent();
         content.content = text;
 
+        const payload = content.encode();
+        if (extra) {
+          payload.extra = extra;
+        }
+
         console.log(`[wildfire] sending message...`);
-        const result = await client.sendMessage(conversation, content.encode());
+        const result = await client.sendMessage(conversation, payload);
         console.log(`[wildfire] send result: success=${result.isSuccess()}, msg=${result.getMsg?.()}`);
 
         if (!result.isSuccess()) {
@@ -188,7 +195,7 @@ export const WildfireChannelPlugin = {
     },
 
     sendMedia: async (ctx: any) => {
-      const { to, mediaUrl, text, accountId } = ctx;
+      const { to, mediaUrl, text, accountId, extra } = ctx;
       console.log(`[wildfire] sendMedia called: to=${to}, mediaUrl=${mediaUrl}`);
       
       if (!mediaUrl) {
@@ -283,6 +290,10 @@ export const WildfireChannelPlugin = {
           console.log(`[wildfire] sending as file`);
           const fileContent = new FileMessageContent(null, remoteUrl, fileName, fileSize);
           payload = fileContent.encode();
+        }
+
+        if (extra) {
+          payload.extra = typeof extra === "string" ? extra : JSON.stringify(extra);
         }
 
         console.log(`[wildfire] sending message...`);
