@@ -51,8 +51,12 @@ export async function startClient(
   entry.client = new RobotServiceClient(
     config.gatewayUrl!,
     {
-      onMessage: (message: any) =>
-        handleIncomingMessage(api, message, config, accountId),
+      onMessage: (message: any) => {
+        api.logger?.debug?.(
+          `[wildfire:${accountId}] raw ws message: ${JSON.stringify(message)}`,
+        );
+        handleIncomingMessage(api, message, config, accountId);
+      },
       onConnectionChanged: (isConnected: boolean) => {
         entry.connected = isConnected;
         api.logger?.info?.(
