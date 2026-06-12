@@ -103,7 +103,7 @@ export async function handleIncomingMessage(
     // Send denied message
     try {
       const deniedMessage = config.whiteList?.deniedMessage || "不允许使用";
-      await sendDirectReply(sender, conv, deniedMessage, api, accountId, extra);
+      await sendDirectReply(sender, conv, deniedMessage, accountId, extra, api);
     } catch (e: any) {
       api.logger?.error?.(`[wildfire] failed to send denied message: ${e.message}`);
     }
@@ -143,10 +143,11 @@ export async function handleIncomingMessage(
       }) ?? "";
 
     const chatType = isGroup ? "group" : "direct";
-    const fromLabel = String(sender);
+    const senderUserInfo = data.senderUserInfo ?? null;
+    const fromLabel = senderUserInfo?.displayName || senderUserInfo?.name || String(sender);
     const conversationLabel = isGroup ? `group:${conv.target}` : `user:${sender}`;
     const senderId = String(sender);
-    const timestamp = Date.now();
+    const timestamp = data.timestamp ?? Date.now();
     const asrServer = resolveAsrServer(config);
 
   // 生成唯一的 streamId 用于流式消息（每条用户消息有独立的流）
@@ -156,7 +157,7 @@ export async function handleIncomingMessage(
 
   // 先发送一个空的 generating 消息显示转圈等待，让客户端立即看到响应
   try {
-    await sendStreamingReply(sender, conv, "...", streamId, "generating", api, accountId, extra);
+    await sendStreamingReply(sender, conv, "...", streamId, "generating", accountId, extra, api);
   } catch (e: any) {
     api.logger?.error?.(`[wildfire] initial stream failed: ${e.message}`);
   }
@@ -206,6 +207,7 @@ export async function handleIncomingMessage(
         messageType: payloadType,
         mediaUrl: mediaUrl ?? null,
         extra,
+        senderUserInfo,
       },
     };
 
@@ -297,7 +299,7 @@ export async function handleIncomingMessage(
 
           try {
             // 发送 generating 消息更新同一条消息
-            await sendStreamingReply(sender, conv, payload.text, streamId, "generating", api, accountId, extra);
+            await sendStreamingReply(sender, conv, payload.text, streamId, "generating", accountId, extra, api);
           } catch (e: any) {
             api.logger?.error?.(`[wildfire] stream update failed: ${e.message}`);
           }
@@ -312,13 +314,13 @@ export async function handleIncomingMessage(
       
       // 如果有内容就发送 completed，否则发送错误提示
       const textToSend = finalText || "(no response)";
-      await sendStreamingReply(sender, conv, textToSend, streamId, "completed", api, accountId, extra);
+      await sendStreamingReply(sender, conv, textToSend, streamId, "completed", accountId, extra, api);
     }
   } catch (err: any) {
     api.logger?.error?.(`[wildfire] dispatch failed: ${err.message}`);
     try {
       const errorText = `Processing failed: ${err.message.slice(0, 80)}`;
-      await sendStreamingReply(sender, conv, errorText, streamId, "completed", api, accountId, extra);
+      await sendStreamingReply(sender, conv, errorText, streamId, "completed", accountId, extra, api);
     } catch {
       // ignore secondary send errors
     }
@@ -350,9 +352,9 @@ async function sendStreamingReply(
   text: string,
   streamId: string,
   state: "start" | "generating" | "completed",
-  api?: any,
   accountId: string,
   extra?: Record<string, unknown> | null,
+  api?: any,
 ): Promise<void> {
   api?.logger?.debug?.(`[wildfire-debug] sendStreamingReply called, state=${state}, text=${text?.substring(0, 30)}`);
   const client = getClient(accountId);
@@ -615,9 +617,9 @@ async function sendDirectReply(
   sender: string,
   conv: { type: number; target: string; line: number },
   text: string,
-  api?: any,
   accountId: string,
   extra?: Record<string, unknown> | null,
+  api?: any,
 ): Promise<void> {
   api?.logger?.debug?.(`[wildfire-debug] sendDirectReply called, text=${text?.substring(0, 30)}`);
   const client = getClient(accountId);
