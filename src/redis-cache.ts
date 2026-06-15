@@ -68,7 +68,7 @@ export async function pushUserSession(
   const userId: string | undefined = data?.senderUserInfo?.userId || data?.sender;
   if (!userId) return;
 
-  const tenantId = resolveTenant(data, config.userCache?.tenantIdField);
+  const tenantId = resolveTenant(data, config.tenantIdField);
   const record = pickFields(data, fields);
   if (!record.userId) record.userId = userId;
 

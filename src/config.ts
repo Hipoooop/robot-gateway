@@ -7,7 +7,6 @@ export interface UserCacheConfig {
   redisUrl?: string;
   fields?: string[];
   notifyKey?: string;
-  tenantIdField?: string;
 }
 
 export interface WildfireConfig {
