@@ -75,7 +75,8 @@ export async function pushUserSession(
   if (!record.userId) record.userId = userId;
 
   const notifyKey = uc.notifyKey || "wildfire:new-message";
-  const userHashKey = `wildfire:tenant-users:${tenantId}:${userId}`;
+  const prefix = uc.keyPrefix || "wildfire:tenant-users";
+  const userHashKey = `${prefix}:${tenantId}:${userId}`;
   const notifyValue = JSON.stringify(record);
 
   try {
