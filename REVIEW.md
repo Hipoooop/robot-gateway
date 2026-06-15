@@ -1,165 +1,136 @@
 ---
 status: issues_found
 depth: deep
-files_reviewed: 5
+files_reviewed: 3
 findings:
   critical: 1
-  warning: 5
-  info: 1
-  total: 7
+  warning: 3
+  info: 2
+  total: 6
 reviewed_files:
-  - openclaw-plugin.js/src/clients.ts
-  - openclaw-plugin.js/src/index.ts
-  - openclaw-plugin.js/src/channel.ts
-  - openclaw-plugin.js/src/inbound.ts
-  - openclaw-plugin.js/src/utils.ts
-reviewed_at: 2026-02-06
+  - src/config.ts
+  - src/redis-cache.ts
+  - src/inbound.ts
+reviewed_at: 2026-06-12
 ---
 
-# Code Review: Wildfire Multi-Account Refactor
+# Code Review: tenant-aware session + Redis cache
 
 ## Summary
 
-5 files reviewed at **deep** depth. 7 findings: 1 critical, 5 warning, 1 info.
+3 files reviewed at **deep** depth. 6 findings: 1 critical, 3 warning, 2 info.
 
-The multi-account refactor is structurally sound — `accountId` flows correctly through the entire call chain from `index.ts` startup → `clients.ts` connection → `inbound.ts` message handling → `utils.ts` mention detection. No hardcoded `"default"` remains in the runtime path. Backward compatibility is maintained through `listEnabledAccountConfigs` fallback.
+The tenant injection and Redis caching implementation is structurally sound. The main concern is a singleton Redis client that ignores URL changes and a missing `tenantIdPath` merge in the multi-account config path.
 
 ## Critical
 
-### CR-01: Optional `accountId` in `sendStreamingReply` / `sendDirectReply` signatures
+### CR-01: Redis client singleton ignores URL changes
 
-**File:** `src/inbound.ts:341,586`
+**File:** `src/redis-cache.ts:12,16`
 **Severity:** Critical
 **Category:** correctness
 
-`sendStreamingReply` and `sendDirectReply` accept `accountId?: string` (optional). If any future call site omits this parameter, `getClient(undefined)` falls back to the first Map entry (arbitrary client), causing messages to be sent from the wrong bot account.
+```typescript
+let redisClient: any = null;
 
-All current call sites within `handleIncomingMessage` pass `accountId` correctly. However, the optional signature is an API contract risk — it signals that omitting the parameter is acceptable when it never is in a multi-account context.
+async function ensureClient(redisUrl: string): Promise<any> {
+  if (redisClient) return redisClient;  // ← 永远返回第一个连接
+```
 
-**Fix:** Change both function signatures to make `accountId: string` required:
+If `redisUrl` changes (config hot-reload, or different accounts pointing to different Redis instances), the cached client is reused with the old URL. All subsequent writes go to the wrong Redis instance.
+
+**Fix:** Track the active URL and recreate the client when it changes:
 
 ```typescript
-// sendStreamingReply — change:
-api?: any,
-accountId?: string,
-// to:
-api: any | undefined,
-accountId: string,
+let activeUrl = "";
+let redisClient: any = null;
 
-// sendDirectReply — change:
-api?: any,
-accountId?: string,
-// to:
-api: any | undefined,
-accountId: string,
+async function ensureClient(redisUrl: string): Promise<any> {
+  if (redisClient && activeUrl === redisUrl) return redisClient;
+  if (redisClient) { redisClient.disconnect(); redisClient = null; }
+  activeUrl = redisUrl;
+  // ... create new client
+}
 ```
 
 ## Warning
 
-### WR-01: `entry.client` initialized via `as unknown as` type assertion
+### WR-01: `getAccountConfig` missing `tenantIdPath` merge in multi-account branch
 
-**File:** `src/clients.ts:36`
-**Severity:** Warning
-**Category:** code quality
-
-```typescript
-const entry: ClientEntry = {
-  client: undefined as unknown as RobotServiceClient,
-  connected: false,
-  config,
-};
-entry.client = new RobotServiceClient(...);
-```
-
-The `as unknown as` bypasses type checking. If any code between the object literal and the assignment reads `entry.client`, it would get `undefined` but typed as `RobotServiceClient`. Low risk in current code (assignment immediately follows), but fragile.
-
-**Fix:** Defer entry construction until after `RobotServiceClient` is created, or declare `client` field as `RobotServiceClient | undefined`.
-
-### WR-02: `getClient` / `getConnectedClient` fallback is non-deterministic
-
-**File:** `src/clients.ts:81-85,93-95`
+**File:** `src/config.ts:42-56`
 **Severity:** Warning
 **Category:** correctness
-
-When called without `accountId`, these functions return the first entry in Map iteration order (insertion order). In a multi-account setup, callers that don't pass `accountId` may silently use the wrong bot. All current call sites in the diff do pass `accountId`, so this is dormant — but the API remains dangerous for future use.
-
-**Fix:** Add a deprecation warning log when the fallback path is taken.
-
-### WR-03: `resolveAccount` spreads entire account object with extra properties
-
-**File:** `src/channel.ts:52-62`
-**Severity:** Warning
-**Category:** code quality
 
 ```typescript
 return {
-  ...wildfireCfg,
-  ...account,
-  accounts: wildfireCfg.accounts,
-  gatewayUrl: account.gatewayUrl ?? wildfireCfg.gatewayUrl,
+  gatewayUrl: account.gatewayUrl ?? cfg.gatewayUrl,
+  robotId: account.robotId ?? cfg.robotId,
   ...
+  userCache: account.userCache ?? cfg.userCache,
+  // ← tenantIdPath 未合并
 };
 ```
 
-If an account sub-config has a typo (e.g., `robotIdd` instead of `robotId`), the misspelled key will silently appear in the resolved account object. Not a functional bug, but reduces error visibility.
+If an account-level config sets `tenantIdPath`, it won't be picked up. Currently `tenantIdPath` is a channel-level config so this isn't triggered, but the interface allows it on per-account `WildfireConfig`.
 
-### WR-04: Dead code path in `resolveAccount` — `enabled === false` check
+**Fix:** Add `tenantIdPath: account.tenantIdPath ?? cfg.tenantIdPath`.
 
-**File:** `src/channel.ts:55`
+### WR-02: Duplicate `resolveTenant`/`resolveTenantId` logic in two files
+
+**File:** `src/inbound.ts:480-490`, `src/redis-cache.ts:32-42`
 **Severity:** Warning
-**Category:** dead code
+**Category:** maintainability
 
-`resolveAccount` checks `if (account.enabled === false) return null`, but `listAccountIds` already filters out `enabled === false` accounts before the framework calls `resolveAccount`. This null-return path will never execute. Not harmful, but dead code.
+Same path-walking + JSON-parse logic duplicated in two files. If the parsing rules change, both must be updated.
 
-### WR-05: `sendDirectReply` whitelist block path uses optional accountId
+**Fix:** Export `resolveTenantId` from `inbound.ts` (or a shared `tenant.ts`) and import it from `redis-cache.ts`.
 
-**File:** `src/inbound.ts:97,586`
+### WR-03: Pipeline stability — if `flattenRecord` fails, entire pipeline may be skipped
+
+**File:** `src/redis-cache.ts:89-91`
 **Severity:** Warning
-**Category:** correctness
+**Category:** robustness
 
-The call at line 97 passes `accountId`, but the function signature at line 586 still marks it optional. Same risk profile as CR-01 but lower frequency (only on whitelist block).
+```typescript
+pipeline.hset(userHashKey, flattenRecord(record));  // flattenRecord 可能抛异常?
+```
+
+`flattenRecord` calls `JSON.stringify` on nested object values. If the nested object contains a circular reference or BigInt, `JSON.stringify` throws. This would crash the pipeline before `exec()`, losing the entire batch (Hash + counter + notify).
+
+**Fix:** Wrap `flattenRecord` in try-catch per field, or pre-validate record values.
 
 ## Info
 
-### I-01: Good error collection pattern in `index.ts`
+### I-01: Good `Promise.race` timeout pattern
 
-**File:** `src/index.ts:34-52`
+**File:** `src/redis-cache.ts:95-99`
 **Severity:** Info
 **Category:** best practice
 
-The startup loop collects per-account errors via `errors.push(...)` and only throws if zero accounts connected. This correctly handles partial failure: one broken account config doesn't prevent other accounts from starting. Good pattern.
+5-second hard timeout on pipeline execution prevents Redis hangs from blocking message processing.
 
-## Call Chain Verification
+### I-02: Reasonable TTL default
+
+**File:** `src/redis-cache.ts:93`
+**Severity:** Info
+**Category:** best practice
+
+24-hour TTL on user hash prevents unbounded key accumulation. Consider making TTL configurable if longer retention is needed.
+
+## Call Chain
 
 ```
-index.ts start()
-  → listEnabledAccountConfigs(api)                    ✓ config.ts
-  → for each { id, config }:
-      → validateConfig(config)                        ✓ config.ts
-      → startClient(api, config, id)                  ✓ clients.ts
-        → handleIncomingMessage(api, msg, config, id) ✓ inbound.ts
-          → shouldRespondToGroupMessage(text,...,robotId,...) ✓ utils.ts
-          → resolveAgentRoute({ accountId: id })      ✓ framework
-          → recordInboundSession({ accountId: id })   ✓ framework
-          → activity.record({ accountId: id })        ✓ framework
-          → sendStreamingReply(..., api, id)          ✓ inbound.ts
-          → sendDirectReply(..., api, id)             ✓ inbound.ts
-channel.ts config adapter
-  listAccountIds → reads accounts map                 ✓
-  resolveAccount → per-account merge with ??          ✓
+inbound.ts: handleIncomingMessage()
+  ├─ resolveTenantId(data, config.tenantIdPath) → tenantId
+  ├─ baseSessionKey = wildfire:user:{tenantId}:{sender}
+  ├─ routePeer.id = {tenantId}:{sender}
+  └─ pushUserSession(config, data)
+       ├─ resolveTenant(data, config.tenantIdPath)
+       ├─ pickFields(data, fields) → record
+       ├─ HSET wildfire:tenant-users:{tenant}:{user} ...
+       ├─ HINCRBY msgCount 1
+       ├─ EXPIRE 86400
+       └─ LPUSH wildfire:new-message ...
 ```
 
-All 6 hardcoded `"default"` values replaced. `accountId` flows end-to-end without gaps.
-
-## Security
-
-| Check | Result |
-|-------|--------|
-| Secret exposure in logs | ✓ `robotSecret` only used in `client.connect()`, never logged |
-| Injection (eval/exec) | ✓ User text extracted via `extractPayloadInfo`, passed as `Body` to AI pipeline |
-| Path traversal | ✓ `downloadMediaToTemp` uses `path.join + UUID`, no user-controlled filenames |
-| Race conditions | ✓ Node single-threaded + `sessionQueues` serialized by sessionKey |
-
-## Recommendation
-
-Apply CR-01 (make accountId required in sendStreamingReply/sendDirectReply) before production deployment. WR-01 through WR-05 are lower priority and can be addressed in a follow-up cleanup pass.
+Path is clean, tenantId flows correctly to both session isolation and Redis keys.
