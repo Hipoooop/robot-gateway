@@ -18,6 +18,7 @@ export interface WildfireConfig {
   asrServer?: string;
   requireMention?: boolean;
   helpKeywords?: string;
+  debug?: boolean;
   accounts?: Record<string, WildfireConfig>;
   whiteList?: {
     enabled?: boolean;

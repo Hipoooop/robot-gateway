@@ -16,6 +16,7 @@
       "asrServer": { "type": "string", "default": "" },
       "requireMention": { "type": "boolean", "default": true },
       "helpKeywords": { "type": "string", "default": "帮,请,分析,总结" },
+      "debug": { "type": "boolean", "default": false },
       "tenantIdPath": { "type": "string", "default": "payload.extra.tenantId" },
       "accounts": {
         "type": "object", "default": {},
@@ -59,6 +60,7 @@
           "asrServer": { "type": "string", "default": "" },
           "requireMention": { "type": "boolean", "default": true },
           "helpKeywords": { "type": "string", "default": "帮,请,分析,总结" },
+          "debug": { "type": "boolean", "default": false },
           "tenantIdPath": { "type": "string", "default": "payload.extra.tenantId" },
           "accounts": {
             "type": "object", "default": {},

@@ -50,6 +50,15 @@ export async function handleIncomingMessage(
   const data = message.data;
   if (!data) return;
 
+  // Debug logging (config-driven)
+  if (config.debug) {
+    try {
+      api.logger?.info?.(
+        `[wildfire:${accountId}] ⬇ RECV data=${JSON.stringify(data)}`,
+      );
+    } catch {}
+  }
+
   // Push session data to Redis (best-effort, config-driven)
   pushUserSession(config, data).catch((err: any) =>
     api.logger?.warn?.(`[wildfire] redis cache push failed: ${err.message}`),
@@ -364,7 +373,11 @@ async function sendStreamingReply(
   extra?: Record<string, unknown> | null,
   api?: any,
 ): Promise<void> {
-  api?.logger?.debug?.(`[wildfire-debug] sendStreamingReply called, state=${state}, text=${text?.substring(0, 30)}`);
+  if (api?.config?.channels?.wildfire?.debug) {
+    api?.logger?.info?.(
+      `[wildfire:${accountId}] ⬆ SEND streaming | ${state} | ${text?.substring(0, 100)}`,
+    );
+  }
   const client = getClient(accountId);
   if (!client) {
     api?.logger?.error?.("[wildfire-debug] client not connected");
@@ -644,7 +657,9 @@ async function sendDirectReply(
   extra?: Record<string, unknown> | null,
   api?: any,
 ): Promise<void> {
-  api?.logger?.debug?.(`[wildfire-debug] sendDirectReply called, text=${text?.substring(0, 30)}`);
+  if (api?.config?.channels?.wildfire?.debug) {
+    api?.logger?.info?.(`[wildfire:${accountId}] ⬆ SEND direct | ${text?.substring(0, 100)}`);
+  }
   const client = getClient(accountId);
   if (!client) {
     api?.logger?.error?.("[wildfire-debug] client not connected");
