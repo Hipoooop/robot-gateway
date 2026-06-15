@@ -36,6 +36,7 @@
         "properties": {
           "enabled": { "type": "boolean", "default": false },
           "redisUrl": { "type": "string", "default": "redis://localhost:6379" },
+          "redisPassword": { "type": "string", "default": "" },
           "fields": { "type": "array", "items": { "type": "string" }, "default": [] },
           "notifyKey": { "type": "string", "default": "wildfire:new-message" },
           "keyPrefix": { "type": "string", "default": "wildfire:tenant-users" }
