@@ -6,6 +6,7 @@ export interface UserCacheConfig {
   enabled?: boolean;
   redisUrl?: string;
   fields?: string[];
+  notifyKey?: string;
 }
 
 export interface WildfireConfig {

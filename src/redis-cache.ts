@@ -32,6 +32,17 @@ async function ensureClient(redisUrl: string): Promise<any> {
  * Extract values from `data` using dot-path field specs.
  * e.g. "senderUserInfo.displayName" → data.senderUserInfo.displayName
  */
+function resolveTenant(data: any): string {
+  try {
+    const raw = data?.senderUserInfo?.extra;
+    if (!raw) return "default";
+    const parsed = JSON.parse(raw);
+    return parsed?.tenantId || "default";
+  } catch {
+    return "default";
+  }
+}
+
 function pickFields(data: any, fields: string[]): Record<string, any> {
   const result: Record<string, any> = {};
   for (const path of fields) {
@@ -75,19 +86,25 @@ export async function pushUserSession(
     record.userId = userId;
   }
 
-  const key = `session:wildfire:user:${userId}`;
+  const tenantId = resolveTenant(data);
+  const userIdKey = `session:wildfire:tenant:${tenantId}:user:${userId}`;
+  const notifyKey = uc.notifyKey || "wildfire:new-message";
   const value = JSON.stringify(record);
+
+  const keys = [userIdKey];
+  if (notifyKey !== userIdKey) keys.push(notifyKey);
 
   try {
     const client = await ensureClient(uc.redisUrl || "redis://localhost:6379");
-    await Promise.race([
-      client.lpush(key, value),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("redis lpush timeout")), 5000),
-      ),
-    ]);
+    for (const k of keys) {
+      await Promise.race([
+        client.lpush(k, value),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error(`redis lpush timeout: ${k}`)), 5000),
+        ),
+      ]);
+    }
   } catch (err: any) {
-    // Silently fail — cache is best-effort
     console.warn(`[wildfire-cache] redis error: ${err.message}`);
   }
 }

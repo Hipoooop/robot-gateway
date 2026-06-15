@@ -116,14 +116,16 @@ export async function handleIncomingMessage(
     return;
   }
 
+  const tenantId = resolveTenantId(data.senderUserInfo?.extra) || "default";
+
   const baseSessionKey = isGroup
-    ? `wildfire:group:${conv.target}`.toLowerCase()
-    : `wildfire:user:${sender}`.toLowerCase();
+    ? `wildfire:group:${tenantId}:${conv.target}`.toLowerCase()
+    : `wildfire:user:${tenantId}:${sender}`.toLowerCase();
 
   const cfg = api.config;
   const routePeer = isGroup
-    ? { kind: "group" as const, id: String(conv.target) }
-    : { kind: "direct" as const, id: String(sender) };
+    ? { kind: "group" as const, id: `${tenantId}:${conv.target}` }
+    : { kind: "direct" as const, id: `${tenantId}:${sender}` };
 
   const route =
     runtime.channel.routing?.resolveAgentRoute?.({
@@ -473,6 +475,16 @@ function pickMediaUrl(payload: any): string | undefined {
     .find(v => !!v);
 
   return normalized || undefined;
+}
+
+function resolveTenantId(extra?: string): string | null {
+  if (!extra) return null;
+  try {
+    const parsed = JSON.parse(extra);
+    return parsed?.tenantId || null;
+  } catch {
+    return null;
+  }
 }
 
 function safePreview(value: string, maxLen = 120): string {
