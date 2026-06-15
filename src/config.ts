@@ -47,6 +47,8 @@ export function getAccountConfig(api: any, accountId: string = "default"): Wildf
       asrServer: account.asrServer ?? cfg.asrServer,
       requireMention: account.requireMention ?? cfg.requireMention ?? true,
       helpKeywords: account.helpKeywords ?? cfg.helpKeywords ?? "帮,请,分析,总结",
+      debug: account.debug ?? cfg.debug,
+      tenantIdPath: account.tenantIdPath ?? cfg.tenantIdPath,
       whiteList: {
         enabled: account.whiteList?.enabled ?? cfg.whiteList?.enabled ?? false,
         allowedUsers: account.whiteList?.allowedUsers ?? cfg.whiteList?.allowedUsers ?? [],
@@ -66,6 +68,8 @@ export function getAccountConfig(api: any, accountId: string = "default"): Wildf
       asrServer: cfg.asrServer,
       requireMention: cfg.requireMention ?? true,
       helpKeywords: cfg.helpKeywords ?? "帮,请,分析,总结",
+      debug: cfg.debug,
+      tenantIdPath: cfg.tenantIdPath,
       whiteList: {
         enabled: cfg.whiteList?.enabled ?? false,
         allowedUsers: cfg.whiteList?.allowedUsers ?? [],
