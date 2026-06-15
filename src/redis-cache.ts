@@ -28,13 +28,13 @@ async function ensureClient(redisUrl: string): Promise<any> {
   return redisClient;
 }
 
-function resolveTenant(data: any, field?: string): string {
+function resolveTenant(data: any, path?: string): string {
   try {
     const raw = data?.senderUserInfo?.extra;
     if (!raw) return "default";
+    const field = path?.startsWith("extra.") ? path.slice(6) : (path || "tenantId");
     const parsed = JSON.parse(raw);
-    const key = field || "tenantId";
-    return parsed?.[key] || parsed?.tenantId || "default";
+    return parsed?.[field] || "default";
   } catch {
     return "default";
   }
@@ -68,7 +68,7 @@ export async function pushUserSession(
   const userId: string | undefined = data?.senderUserInfo?.userId || data?.sender;
   if (!userId) return;
 
-  const tenantId = resolveTenant(data, config.tenantIdField);
+  const tenantId = resolveTenant(data, config.tenantIdPath);
   const record = pickFields(data, fields);
   if (!record.userId) record.userId = userId;
 

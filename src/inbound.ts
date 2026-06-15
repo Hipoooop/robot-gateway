@@ -116,7 +116,7 @@ export async function handleIncomingMessage(
     return;
   }
 
-  const tenantId = resolveTenantId(data.senderUserInfo?.extra, config.tenantIdField) || "default";
+  const tenantId = resolveTenantId(data.senderUserInfo?.extra, config.tenantIdPath) || "default";
 
   const baseSessionKey = isGroup
     ? `wildfire:group:${tenantId}:${conv.target}`.toLowerCase()
@@ -477,11 +477,12 @@ function pickMediaUrl(payload: any): string | undefined {
   return normalized || undefined;
 }
 
-function resolveTenantId(extra?: string, field?: string): string | null {
+function resolveTenantId(extra?: string, path?: string): string | null {
   if (!extra) return null;
   try {
+    const field = path?.startsWith("extra.") ? path.slice(6) : (path || "tenantId");
     const parsed = JSON.parse(extra);
-    return parsed?.[field || "tenantId"] || parsed?.tenantId || null;
+    return parsed?.[field] || null;
   } catch {
     return null;
   }

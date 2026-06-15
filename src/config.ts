@@ -24,7 +24,7 @@ export interface WildfireConfig {
     allowedGroups?: string[];
     deniedMessage?: string;
   };
-  tenantIdField?: string;
+  tenantIdPath?: string;
   userCache?: UserCacheConfig;
 }
 
