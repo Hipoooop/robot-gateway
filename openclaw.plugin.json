@@ -10,7 +10,31 @@
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
-    "properties": {}
+    "properties": {
+      "enabled": { "type": "boolean", "default": true },
+      "gatewayUrl": { "type": "string", "default": "" },
+      "robotId": { "type": "string", "default": "" },
+      "robotSecret": { "type": "string", "default": "" },
+      "asrServer": { "type": "string", "default": "" },
+      "requireMention": { "type": "boolean", "default": true },
+      "helpKeywords": { "type": "string", "default": "帮,请,分析,总结" },
+      "accounts": {
+        "type": "object",
+        "default": {},
+        "additionalProperties": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "gatewayUrl": { "type": "string", "default": "" },
+            "robotId": { "type": "string", "default": "" },
+            "robotSecret": { "type": "string", "default": "" },
+            "asrServer": { "type": "string", "default": "" },
+            "requireMention": { "type": "boolean", "default": true }
+          }
+        }
+      }
+    }
   },
   "channelConfigs": {
     "wildfire": {
