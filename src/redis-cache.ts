@@ -29,7 +29,7 @@ async function ensureClient(redisUrl: string): Promise<any> {
 }
 
 function resolveTenant(data: any, path?: string): string {
-  const fullPath = path || "senderUserInfo.extra.tenantId";
+  const fullPath = path || "payload.extra.tenantId";
   const segments = fullPath.split(".");
   const field = segments.pop()!;
   const jsonStr = segments.reduce((obj: any, key) => obj?.[key], data);
