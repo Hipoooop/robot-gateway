@@ -4,9 +4,7 @@
   "version": "1.0.0",
   "description": "Wildfire IM channel for OpenClaw",
   "author": "Wildfire IM Team",
-  "channels": [
-    "wildfire"
-  ],
+  "channels": ["wildfire"],
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -20,11 +18,9 @@
       "helpKeywords": { "type": "string", "default": "帮,请,分析,总结" },
       "tenantIdPath": { "type": "string", "default": "payload.extra.tenantId" },
       "accounts": {
-        "type": "object",
-        "default": {},
+        "type": "object", "default": {},
         "additionalProperties": {
-          "type": "object",
-          "additionalProperties": false,
+          "type": "object", "additionalProperties": false,
           "properties": {
             "enabled": { "type": "boolean", "default": true },
             "gatewayUrl": { "type": "string", "default": "" },
@@ -36,16 +32,11 @@
         }
       },
       "userCache": {
-        "type": "object",
-        "additionalProperties": false,
+        "type": "object", "additionalProperties": false,
         "properties": {
           "enabled": { "type": "boolean", "default": false },
           "redisUrl": { "type": "string", "default": "redis://localhost:6379" },
-          "fields": {
-            "type": "array",
-            "items": { "type": "string" },
-            "default": []
-          },
+          "fields": { "type": "array", "items": { "type": "string" }, "default": [] },
           "notifyKey": { "type": "string", "default": "wildfire:new-message" },
           "keyPrefix": { "type": "string", "default": "wildfire:tenant-users" }
         }
@@ -67,12 +58,11 @@
           "asrServer": { "type": "string", "default": "" },
           "requireMention": { "type": "boolean", "default": true },
           "helpKeywords": { "type": "string", "default": "帮,请,分析,总结" },
+          "tenantIdPath": { "type": "string", "default": "payload.extra.tenantId" },
           "accounts": {
-            "type": "object",
-            "default": {},
+            "type": "object", "default": {},
             "additionalProperties": {
-              "type": "object",
-              "additionalProperties": false,
+              "type": "object", "additionalProperties": false,
               "properties": {
                 "enabled": { "type": "boolean", "default": true },
                 "gatewayUrl": { "type": "string", "default": "" },
@@ -84,16 +74,13 @@
             }
           },
           "userCache": {
-            "type": "object",
-            "additionalProperties": false,
+            "type": "object", "additionalProperties": false,
             "properties": {
               "enabled": { "type": "boolean", "default": false },
               "redisUrl": { "type": "string", "default": "redis://localhost:6379" },
-              "fields": {
-                "type": "array",
-                "items": { "type": "string" },
-                "default": []
-              }
+              "fields": { "type": "array", "items": { "type": "string" }, "default": [] },
+              "notifyKey": { "type": "string", "default": "wildfire:new-message" },
+              "keyPrefix": { "type": "string", "default": "wildfire:tenant-users" }
             }
           }
         }
