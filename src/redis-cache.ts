@@ -6,10 +6,17 @@
 import type { WildfireConfig, UserCacheConfig } from "./config.js";
 
 let Redis: any;
+let activeUrl = "";
 let redisClient: any = null;
 
 async function ensureClient(redisUrl: string): Promise<any> {
-  if (redisClient) return redisClient;
+  const url = redisUrl || "redis://localhost:6379";
+  if (redisClient && activeUrl === url) return redisClient;
+  if (redisClient) {
+    try { redisClient.disconnect(); } catch {}
+    redisClient = null;
+  }
+  activeUrl = url;
   if (!Redis) {
     try {
       Redis = (await import("ioredis")).default;
@@ -17,7 +24,7 @@ async function ensureClient(redisUrl: string): Promise<any> {
       throw new Error("ioredis is required for userCache. Run: npm install ioredis");
     }
   }
-  redisClient = new Redis(redisUrl || "redis://localhost:6379", {
+  redisClient = new Redis(url, {
     connectTimeout: 3000,
     commandTimeout: 2000,
     maxRetriesPerRequest: 1,
