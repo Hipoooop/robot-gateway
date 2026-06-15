@@ -5,6 +5,7 @@
 export interface UserCacheConfig {
   enabled?: boolean;
   redisUrl?: string;
+  redisPassword?: string;
   fields?: string[];
   notifyKey?: string;
   keyPrefix?: string;

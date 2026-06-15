@@ -9,14 +9,15 @@ let Redis: any;
 let activeUrl = "";
 let redisClient: any = null;
 
-async function ensureClient(redisUrl: string): Promise<any> {
+async function ensureClient(redisUrl: string, redisPassword?: string): Promise<any> {
   const url = redisUrl || "redis://localhost:6379";
-  if (redisClient && activeUrl === url) return redisClient;
+  const key = `${url}:${redisPassword || ""}`;
+  if (redisClient && activeUrl === key) return redisClient;
   if (redisClient) {
     try { redisClient.disconnect(); } catch {}
     redisClient = null;
   }
-  activeUrl = url;
+  activeUrl = key;
   if (!Redis) {
     try {
       Redis = (await import("ioredis")).default;
@@ -24,13 +25,15 @@ async function ensureClient(redisUrl: string): Promise<any> {
       throw new Error("ioredis is required for userCache. Run: npm install ioredis");
     }
   }
-  redisClient = new Redis(url, {
+  const redisOpts: any = {
     connectTimeout: 3000,
     commandTimeout: 2000,
     maxRetriesPerRequest: 1,
     retryStrategy: () => null,
     lazyConnect: true,
-  });
+  };
+  if (redisPassword) redisOpts.password = redisPassword;
+  redisClient = new Redis(url, redisOpts);
   await redisClient.connect();
   return redisClient;
 }
@@ -87,7 +90,7 @@ export async function pushUserSession(
   const notifyValue = JSON.stringify(record);
 
   try {
-    const client = await ensureClient(uc.redisUrl || "redis://localhost:6379");
+    const client = await ensureClient(uc.redisUrl || "redis://localhost:6379", uc.redisPassword);
 
     const pipeline = client.pipeline();
     pipeline.hset(userHashKey, flattenRecord(record));
