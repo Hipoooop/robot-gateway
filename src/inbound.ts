@@ -10,6 +10,7 @@ import type { WildfireConfig } from "./config.js";
 import { shouldRespondToGroupMessage } from "./utils.js";
 import { getClient } from "./clients.js";
 import { WhitelistFilter } from "./whitelist.js";
+import { pushUserSession } from "./redis-cache.js";
 import {
   TextMessageContent,
   StreamingTextGeneratingMessageContent,
@@ -48,6 +49,11 @@ export async function handleIncomingMessage(
 
   const data = message.data;
   if (!data) return;
+
+  // Push session data to Redis (best-effort, config-driven)
+  pushUserSession(config, data).catch((err: any) =>
+    api.logger?.warn?.(`[wildfire] redis cache push failed: ${err.message}`),
+  );
 
   const sender = data.sender;
   const conv = data.conv;

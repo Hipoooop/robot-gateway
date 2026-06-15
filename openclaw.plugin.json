@@ -33,6 +33,19 @@
             "requireMention": { "type": "boolean", "default": true }
           }
         }
+      },
+      "userCache": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": { "type": "boolean", "default": false },
+          "redisUrl": { "type": "string", "default": "redis://localhost:6379" },
+          "fields": {
+            "type": "array",
+            "items": { "type": "string" },
+            "default": []
+          }
+        }
       }
     }
   },
@@ -64,6 +77,19 @@
                 "robotSecret": { "type": "string", "default": "" },
                 "asrServer": { "type": "string", "default": "" },
                 "requireMention": { "type": "boolean", "default": true }
+              }
+            }
+          },
+          "userCache": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "enabled": { "type": "boolean", "default": false },
+              "redisUrl": { "type": "string", "default": "redis://localhost:6379" },
+              "fields": {
+                "type": "array",
+                "items": { "type": "string" },
+                "default": []
               }
             }
           }

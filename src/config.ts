@@ -1,6 +1,12 @@
 /**
- * Configuration for Wildfire IM channel (Single Account)
+ * Configuration for Wildfire IM channel
  */
+
+export interface UserCacheConfig {
+  enabled?: boolean;
+  redisUrl?: string;
+  fields?: string[];
+}
 
 export interface WildfireConfig {
   enabled?: boolean;
@@ -17,6 +23,7 @@ export interface WildfireConfig {
     allowedGroups?: string[];
     deniedMessage?: string;
   };
+  userCache?: UserCacheConfig;
 }
 
 /**
@@ -25,7 +32,6 @@ export interface WildfireConfig {
 export function getAccountConfig(api: any, accountId: string = "default"): WildfireConfig | null {
   const cfg: WildfireConfig = api.config.channels.wildfire || {};
   
-  // If using multi-account config
   if (cfg.accounts?.[accountId]) {
     const account = cfg.accounts[accountId];
     if (account.enabled === false) return null;
@@ -42,10 +48,10 @@ export function getAccountConfig(api: any, accountId: string = "default"): Wildf
         allowedGroups: account.whiteList?.allowedGroups ?? cfg.whiteList?.allowedGroups ?? [],
         deniedMessage: account.whiteList?.deniedMessage ?? cfg.whiteList?.deniedMessage ?? "不允许使用",
       },
+      userCache: account.userCache ?? cfg.userCache,
     };
   }
   
-  // Single account (legacy) config
   if (accountId === "default") {
     if (cfg.enabled === false) return null;
     return {
@@ -61,54 +67,37 @@ export function getAccountConfig(api: any, accountId: string = "default"): Wildf
         allowedGroups: cfg.whiteList?.allowedGroups ?? [],
         deniedMessage: cfg.whiteList?.deniedMessage ?? "不允许使用",
       },
+      userCache: cfg.userCache,
     };
   }
   
   return null;
 }
 
-/**
- * List all enabled account configurations
- */
 export function listEnabledAccountConfigs(api: any): Array<{ id: string; config: WildfireConfig }> {
   const cfg: WildfireConfig = api.config.channels.wildfire || {};
   const accounts: Array<{ id: string; config: WildfireConfig }> = [];
   
-  // Check multi-account config
   if (cfg.accounts) {
     for (const [id, account] of Object.entries(cfg.accounts)) {
       if (account.enabled !== false) {
         const effective = getAccountConfig(api, id);
-        if (effective) {
-          accounts.push({ id, config: effective });
-        }
+        if (effective) accounts.push({ id, config: effective });
       }
     }
   }
   
-  // Check single account config
   if (accounts.length === 0 && cfg.enabled !== false) {
     const defaultConfig = getAccountConfig(api, "default");
-    if (defaultConfig) {
-      accounts.push({ id: "default", config: defaultConfig });
-    }
+    if (defaultConfig) accounts.push({ id: "default", config: defaultConfig });
   }
   
   return accounts;
 }
 
-/**
- * Validate account configuration
- */
 export function validateConfig(config: WildfireConfig): string | null {
-  if (!config.gatewayUrl) {
-    return "gatewayUrl is required";
-  }
-  if (!config.robotId) {
-    return "robotId is required";
-  }
-  if (!config.robotSecret) {
-    return "robotSecret is required";
-  }
+  if (!config.gatewayUrl) return "gatewayUrl is required";
+  if (!config.robotId) return "robotId is required";
+  if (!config.robotSecret) return "robotSecret is required";
   return null;
 }

@@ -1,0 +1,81 @@
+/**
+ * Redis user session cache — extracts configured fields from incoming messages
+ * and pushes them to a Redis List keyed by userId.
+ */
+
+import type { WildfireConfig, UserCacheConfig } from "./config.js";
+
+let Redis: any;
+let redisClient: any = null;
+
+async function ensureClient(redisUrl: string): Promise<any> {
+  if (redisClient) return redisClient;
+  if (!Redis) {
+    try {
+      Redis = (await import("ioredis")).default;
+    } catch {
+      throw new Error("ioredis is required for userCache. Run: npm install ioredis");
+    }
+  }
+  redisClient = new Redis(redisUrl || "redis://localhost:6379");
+  return redisClient;
+}
+
+/**
+ * Extract values from `data` using dot-path field specs.
+ * e.g. "senderUserInfo.displayName" → data.senderUserInfo.displayName
+ */
+function pickFields(data: any, fields: string[]): Record<string, any> {
+  const result: Record<string, any> = {};
+  for (const path of fields) {
+    const value = path.split(".").reduce((obj, key) => obj?.[key], data);
+    if (value === undefined || value === null) continue;
+    // Use the last segment as the key name
+    const lastKey = path.split(".").pop()!;
+    // Try to parse JSON strings (e.g. payload.extra)
+    if (typeof value === "string") {
+      try { result[lastKey] = JSON.parse(value); continue; } catch {}
+    }
+    result[lastKey] = value;
+  }
+  return result;
+}
+
+/**
+ * Push extracted session data to Redis List.
+ * Key: session:wildfire:user:{userId}
+ */
+export async function pushUserSession(
+  config: WildfireConfig,
+  data: any,
+): Promise<void> {
+  const uc: UserCacheConfig | undefined = config.userCache;
+  if (!uc?.enabled) return;
+  if (!data) return;
+
+  const fields = uc.fields;
+  if (!fields || fields.length === 0) return;
+
+  // Ensure userId is always part of the cached data
+  const userId: string | undefined =
+    data?.senderUserInfo?.userId || data?.sender;
+  if (!userId) return;
+
+  const record = pickFields(data, fields);
+
+  // Always include userId in the stored record
+  if (!record.userId) {
+    record.userId = userId;
+  }
+
+  const key = `session:wildfire:user:${userId}`;
+  const value = JSON.stringify(record);
+
+  try {
+    const client = await ensureClient(uc.redisUrl || "redis://localhost:6379");
+    await client.lpush(key, value);
+  } catch (err: any) {
+    // Silently fail — cache is best-effort
+    console.warn(`[wildfire-cache] redis error: ${err.message}`);
+  }
+}
