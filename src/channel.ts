@@ -29,6 +29,8 @@ export const WildfireChannelPlugin = {
     chatTypes: ["direct", "group"],
   },
 
+  reload: { configPrefixes: ["channels.wildfire"] },
+
   config: {
     // Multi-account: enumerate all configured account IDs
     listAccountIds: (cfg: any) => {
