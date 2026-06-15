@@ -17,7 +17,14 @@ async function ensureClient(redisUrl: string): Promise<any> {
       throw new Error("ioredis is required for userCache. Run: npm install ioredis");
     }
   }
-  redisClient = new Redis(redisUrl || "redis://localhost:6379");
+  redisClient = new Redis(redisUrl || "redis://localhost:6379", {
+    connectTimeout: 3000,
+    commandTimeout: 2000,
+    maxRetriesPerRequest: 1,
+    retryStrategy: () => null,
+    lazyConnect: true,
+  });
+  await redisClient.connect();
   return redisClient;
 }
 
@@ -73,7 +80,12 @@ export async function pushUserSession(
 
   try {
     const client = await ensureClient(uc.redisUrl || "redis://localhost:6379");
-    await client.lpush(key, value);
+    await Promise.race([
+      client.lpush(key, value),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("redis lpush timeout")), 5000),
+      ),
+    ]);
   } catch (err: any) {
     // Silently fail — cache is best-effort
     console.warn(`[wildfire-cache] redis error: ${err.message}`);
