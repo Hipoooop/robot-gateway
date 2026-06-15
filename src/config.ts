@@ -7,6 +7,7 @@ export interface UserCacheConfig {
   redisUrl?: string;
   fields?: string[];
   notifyKey?: string;
+  tenantIdField?: string;
 }
 
 export interface WildfireConfig {
@@ -24,6 +25,7 @@ export interface WildfireConfig {
     allowedGroups?: string[];
     deniedMessage?: string;
   };
+  tenantIdField?: string;
   userCache?: UserCacheConfig;
 }
 
