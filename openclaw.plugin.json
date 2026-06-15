@@ -18,6 +18,7 @@
       "asrServer": { "type": "string", "default": "" },
       "requireMention": { "type": "boolean", "default": true },
       "helpKeywords": { "type": "string", "default": "帮,请,分析,总结" },
+      "tenantIdPath": { "type": "string", "default": "payload.extra.tenantId" },
       "accounts": {
         "type": "object",
         "default": {},
@@ -44,7 +45,9 @@
             "type": "array",
             "items": { "type": "string" },
             "default": []
-          }
+          },
+          "notifyKey": { "type": "string", "default": "wildfire:new-message" },
+          "keyPrefix": { "type": "string", "default": "wildfire:tenant-users" }
         }
       }
     }
