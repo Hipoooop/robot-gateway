@@ -1,6 +1,6 @@
 /**
- * Redis user session cache — extracts configured fields from incoming messages
- * and pushes them to a Redis List keyed by userId.
+ * Redis user session cache — stores user profile (Hash), message count (Hash field),
+ * last active time (Hash field), and notification events (List).
  */
 
 import type { WildfireConfig, UserCacheConfig } from "./config.js";
@@ -28,10 +28,6 @@ async function ensureClient(redisUrl: string): Promise<any> {
   return redisClient;
 }
 
-/**
- * Extract values from `data` using dot-path field specs.
- * e.g. "senderUserInfo.displayName" → data.senderUserInfo.displayName
- */
 function resolveTenant(data: any): string {
   try {
     const raw = data?.senderUserInfo?.extra;
@@ -48,9 +44,7 @@ function pickFields(data: any, fields: string[]): Record<string, any> {
   for (const path of fields) {
     const value = path.split(".").reduce((obj, key) => obj?.[key], data);
     if (value === undefined || value === null) continue;
-    // Use the last segment as the key name
     const lastKey = path.split(".").pop()!;
-    // Try to parse JSON strings (e.g. payload.extra)
     if (typeof value === "string") {
       try { result[lastKey] = JSON.parse(value); continue; } catch {}
     }
@@ -59,10 +53,6 @@ function pickFields(data: any, fields: string[]): Record<string, any> {
   return result;
 }
 
-/**
- * Push extracted session data to Redis List.
- * Key: session:wildfire:user:{userId}
- */
 export async function pushUserSession(
   config: WildfireConfig,
   data: any,
@@ -74,37 +64,47 @@ export async function pushUserSession(
   const fields = uc.fields;
   if (!fields || fields.length === 0) return;
 
-  // Ensure userId is always part of the cached data
-  const userId: string | undefined =
-    data?.senderUserInfo?.userId || data?.sender;
+  const userId: string | undefined = data?.senderUserInfo?.userId || data?.sender;
   if (!userId) return;
 
-  const record = pickFields(data, fields);
-
-  // Always include userId in the stored record
-  if (!record.userId) {
-    record.userId = userId;
-  }
-
   const tenantId = resolveTenant(data);
-  const userIdKey = `session:wildfire:tenant:${tenantId}:user:${userId}`;
-  const notifyKey = uc.notifyKey || "wildfire:new-message";
-  const value = JSON.stringify(record);
+  const record = pickFields(data, fields);
+  if (!record.userId) record.userId = userId;
 
-  const keys = [userIdKey];
-  if (notifyKey !== userIdKey) keys.push(notifyKey);
+  const notifyKey = uc.notifyKey || "wildfire:new-message";
+  const userHashKey = `wildfire:tenant-users:${tenantId}:${userId}`;
+  const notifyValue = JSON.stringify(record);
 
   try {
     const client = await ensureClient(uc.redisUrl || "redis://localhost:6379");
-    for (const k of keys) {
-      await Promise.race([
-        client.lpush(k, value),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error(`redis lpush timeout: ${k}`)), 5000),
-        ),
-      ]);
-    }
+
+    const pipeline = client.pipeline();
+    pipeline.hset(userHashKey, flattenRecord(record));
+    pipeline.hset(userHashKey, "lastActiveAt", String(data.timestamp ?? Date.now()));
+    pipeline.hincrby(userHashKey, "msgCount", 1);
+    pipeline.expire(userHashKey, 86400);
+    pipeline.lpush(notifyKey, notifyValue);
+
+    await Promise.race([
+      pipeline.exec(),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("redis pipeline timeout")), 5000),
+      ),
+    ]);
   } catch (err: any) {
     console.warn(`[wildfire-cache] redis error: ${err.message}`);
   }
+}
+
+function flattenRecord(record: Record<string, any>): Record<string, string> {
+  const flat: Record<string, string> = {};
+  for (const [key, value] of Object.entries(record)) {
+    if (value === null || value === undefined) continue;
+    if (typeof value === "object") {
+      flat[key] = JSON.stringify(value);
+    } else {
+      flat[key] = String(value);
+    }
+  }
+  return flat;
 }
