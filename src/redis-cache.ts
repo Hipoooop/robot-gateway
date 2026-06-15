@@ -29,11 +29,13 @@ async function ensureClient(redisUrl: string): Promise<any> {
 }
 
 function resolveTenant(data: any, path?: string): string {
+  const fullPath = path || "senderUserInfo.extra.tenantId";
+  const segments = fullPath.split(".");
+  const field = segments.pop()!;
+  const jsonStr = segments.reduce((obj: any, key) => obj?.[key], data);
+  if (!jsonStr || typeof jsonStr !== "string") return "default";
   try {
-    const raw = data?.senderUserInfo?.extra;
-    if (!raw) return "default";
-    const field = path?.startsWith("extra.") ? path.slice(6) : (path || "tenantId");
-    const parsed = JSON.parse(raw);
+    const parsed = JSON.parse(jsonStr);
     return parsed?.[field] || "default";
   } catch {
     return "default";

@@ -116,7 +116,7 @@ export async function handleIncomingMessage(
     return;
   }
 
-  const tenantId = resolveTenantId(data.senderUserInfo?.extra, config.tenantIdPath) || "default";
+  const tenantId = resolveTenantId(data, config.tenantIdPath) || "default";
 
   const baseSessionKey = isGroup
     ? `wildfire:group:${tenantId}:${conv.target}`.toLowerCase()
@@ -477,11 +477,15 @@ function pickMediaUrl(payload: any): string | undefined {
   return normalized || undefined;
 }
 
-function resolveTenantId(extra?: string, path?: string): string | null {
-  if (!extra) return null;
+function resolveTenantId(data: any, path?: string): string | null {
+  const fullPath = path || "senderUserInfo.extra.tenantId";
+  // Walk to the parent of the last segment (the JSON string field)
+  const segments = fullPath.split(".");
+  const field = segments.pop()!;
+  const jsonStr = segments.reduce((obj: any, key) => obj?.[key], data);
+  if (!jsonStr || typeof jsonStr !== "string") return null;
   try {
-    const field = path?.startsWith("extra.") ? path.slice(6) : (path || "tenantId");
-    const parsed = JSON.parse(extra);
+    const parsed = JSON.parse(jsonStr);
     return parsed?.[field] || null;
   } catch {
     return null;
