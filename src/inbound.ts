@@ -218,6 +218,9 @@ export async function handleIncomingMessage(
       Timestamp: timestamp,
       OriginatingChannel: "wildfire",
       OriginatingTo: `wildfire:user:${sender}`,
+      TenantId: tenantId,
+      TenantName: tenantName ?? undefined,
+      RobotId: config.robotId,
       CommandAuthorized: true,
       _wildfire: {
         accountId,
