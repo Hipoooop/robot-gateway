@@ -126,6 +126,9 @@ export async function handleIncomingMessage(
   }
 
   const tenantId = resolveTenantId(data, config.tenantIdPath) || "default";
+  const tenantName = config.tenantNamePath
+    ? resolveTenantId(data, config.tenantNamePath)
+    : null;
 
   const baseSessionKey = isGroup
     ? `wildfire:group:${tenantId}:${conv.target}`.toLowerCase()
@@ -225,6 +228,8 @@ export async function handleIncomingMessage(
         mediaUrl: mediaUrl ?? null,
         extra,
         senderUserInfo,
+        tenantId,
+        tenantName,
       },
     };
 
