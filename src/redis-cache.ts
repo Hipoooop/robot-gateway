@@ -96,7 +96,7 @@ export async function pushUserSession(
     pipeline.hset(userHashKey, flattenRecord(record));
     pipeline.hset(userHashKey, "lastActiveAt", String(data.timestamp ?? Date.now()));
     pipeline.hincrby(userHashKey, "msgCount", 1);
-    pipeline.expire(userHashKey, 86400);
+    pipeline.expire(userHashKey, 31536000);
     pipeline.lpush(notifyKey, notifyValue);
 
     await Promise.race([
