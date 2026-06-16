@@ -59,7 +59,15 @@ function pickFields(data: any, fields: string[]): Record<string, any> {
     if (value === undefined || value === null) continue;
     const lastKey = path.split(".").pop()!;
     if (typeof value === "string") {
-      try { result[lastKey] = JSON.parse(value); continue; } catch {}
+      try {
+        const parsed = JSON.parse(value);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          Object.assign(result, parsed);
+          continue;
+        }
+        result[lastKey] = parsed;
+        continue;
+      } catch {}
     }
     result[lastKey] = value;
   }
@@ -94,12 +102,16 @@ export async function pushUserSession(
   if (!userId) return;
 
   const tenantId = resolveTenant(data, config.tenantIdPath);
+  const tenantName = pickField(data, config.tenantNamePath || "payload.extra.tenantName");
   const record = pickFields(data, fields);
   if (!record.userId) record.userId = userId;
 
   const notifyKey = uc.notifyKey || "wildfire:new-message";
   const prefix = uc.keyPrefix || "wildfire:tenant-users";
   const userHashKey = `${prefix}:${tenantId}:${userId}`;
+  record.robotId = config.robotId || "";
+  record.tenantId = tenantId;
+  if (tenantName) record.tenantName = tenantName;
   const notifyValue = JSON.stringify(record);
 
   try {
@@ -108,7 +120,6 @@ export async function pushUserSession(
     const pipeline = client.pipeline();
     const flat = flattenRecord(record);
     flat["robotId"] = config.robotId || "";
-    const tenantName = pickField(data, config.tenantNamePath || "payload.extra.tenantName");
     if (tenantName) flat["tenantName"] = String(tenantName);
 
     pipeline.hset(userHashKey, flat);
