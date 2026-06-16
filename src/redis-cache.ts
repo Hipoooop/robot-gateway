@@ -107,6 +107,7 @@ export async function pushUserSession(
 
     const pipeline = client.pipeline();
     const flat = flattenRecord(record);
+    flat["robotId"] = config.robotId || "";
     const tenantName = pickField(data, config.tenantNamePath || "payload.extra.tenantName");
     if (tenantName) flat["tenantName"] = String(tenantName);
 

@@ -228,6 +228,7 @@ export async function handleIncomingMessage(
         mediaUrl: mediaUrl ?? null,
         extra,
         senderUserInfo,
+        robotId: config.robotId,
         tenantId,
         tenantName,
       },
