@@ -11,6 +11,7 @@ import { shouldRespondToGroupMessage } from "./utils.js";
 import { getClient } from "./clients.js";
 import { WhitelistFilter } from "./whitelist.js";
 import { pushUserSession } from "./redis-cache.js";
+
 import {
   TextMessageContent,
   StreamingTextGeneratingMessageContent,
@@ -213,15 +214,29 @@ export async function handleIncomingMessage(
       SenderId: senderId,
       Provider: "wildfire",
       Surface: "wildfire",
-      // Use real message ID when available; fall back to UUID to avoid collisions
       MessageSid: `wildfire-${(data.messageId ?? data.msgId ?? data.mid) || randomUUID()}`,
       Timestamp: timestamp,
       OriginatingChannel: "wildfire",
       OriginatingTo: `wildfire:user:${sender}`,
+      RobotId: config.robotId,
       TenantId: tenantId,
       TenantName: tenantName ?? undefined,
-      RobotId: config.robotId,
       CommandAuthorized: true,
+      // expand to MsgContext top-level via buildChannelInboundEventContext extra
+      extra: {
+        tenantId,
+        tenantName: tenantName ?? undefined,
+        robotId: config.robotId,
+        userId: senderUserInfo?.userId ?? sender,
+        displayName: senderUserInfo?.displayName,
+        mobile: senderUserInfo?.mobile,
+        isGroup,
+        conversationId: conv.target,
+        messageType: payloadType,
+        mediaUrl: mediaUrl ?? null,
+        payloadExtra: extra,
+        senderUserInfo,
+      },
       _wildfire: {
         accountId,
         isGroup,
