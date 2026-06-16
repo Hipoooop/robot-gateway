@@ -18,6 +18,7 @@
       "helpKeywords": { "type": "string", "default": "帮,请,分析,总结" },
       "debug": { "type": "boolean", "default": false },
       "tenantIdPath": { "type": "string", "default": "payload.extra.tenantId" },
+      "tenantNamePath": { "type": "string", "default": "payload.extra.tenantName" },
       "accounts": {
         "type": "object", "default": {},
         "additionalProperties": {
@@ -62,6 +63,7 @@
           "helpKeywords": { "type": "string", "default": "帮,请,分析,总结" },
           "debug": { "type": "boolean", "default": false },
           "tenantIdPath": { "type": "string", "default": "payload.extra.tenantId" },
+          "tenantNamePath": { "type": "string", "default": "payload.extra.tenantName" },
           "accounts": {
             "type": "object", "default": {},
             "additionalProperties": {

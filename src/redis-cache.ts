@@ -66,6 +66,19 @@ function pickFields(data: any, fields: string[]): Record<string, any> {
   return result;
 }
 
+function pickField(data: any, path: string): any {
+  try {
+    const segments = path.split(".");
+    const field = segments.pop()!;
+    const jsonStr = segments.reduce((obj: any, key) => obj?.[key], data);
+    if (!jsonStr || typeof jsonStr !== "string") return null;
+    const parsed = JSON.parse(jsonStr);
+    return parsed?.[field] || null;
+  } catch {
+    return null;
+  }
+}
+
 export async function pushUserSession(
   config: WildfireConfig,
   data: any,
@@ -93,7 +106,11 @@ export async function pushUserSession(
     const client = await ensureClient(uc.redisUrl || "redis://localhost:6379", uc.redisPassword);
 
     const pipeline = client.pipeline();
-    pipeline.hset(userHashKey, flattenRecord(record));
+    const flat = flattenRecord(record);
+    const tenantName = pickField(data, config.tenantNamePath || "payload.extra.tenantName");
+    if (tenantName) flat["tenantName"] = String(tenantName);
+
+    pipeline.hset(userHashKey, flat);
     pipeline.hset(userHashKey, "lastActiveAt", String(data.timestamp ?? Date.now()));
     pipeline.hincrby(userHashKey, "msgCount", 1);
     pipeline.expire(userHashKey, 31536000);

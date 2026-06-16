@@ -28,6 +28,7 @@ export interface WildfireConfig {
     deniedMessage?: string;
   };
   tenantIdPath?: string;
+  tenantNamePath?: string;
   userCache?: UserCacheConfig;
 }
 
@@ -49,6 +50,7 @@ export function getAccountConfig(api: any, accountId: string = "default"): Wildf
       helpKeywords: account.helpKeywords ?? cfg.helpKeywords ?? "帮,请,分析,总结",
       debug: account.debug ?? cfg.debug,
       tenantIdPath: account.tenantIdPath ?? cfg.tenantIdPath,
+      tenantNamePath: account.tenantNamePath ?? cfg.tenantNamePath,
       whiteList: {
         enabled: account.whiteList?.enabled ?? cfg.whiteList?.enabled ?? false,
         allowedUsers: account.whiteList?.allowedUsers ?? cfg.whiteList?.allowedUsers ?? [],
@@ -70,6 +72,7 @@ export function getAccountConfig(api: any, accountId: string = "default"): Wildf
       helpKeywords: cfg.helpKeywords ?? "帮,请,分析,总结",
       debug: cfg.debug,
       tenantIdPath: cfg.tenantIdPath,
+      tenantNamePath: cfg.tenantNamePath,
       whiteList: {
         enabled: cfg.whiteList?.enabled ?? false,
         allowedUsers: cfg.whiteList?.allowedUsers ?? [],
