@@ -103,6 +103,7 @@ export async function buildInboundContext(
     SenderId: p.senderId,
     Provider: "wildfire",
     Surface: "wildfire",
+    MessageSid: `wildfire-${Date.now()}`,
     Timestamp: p.timestamp,
     OriginatingChannel: "wildfire",
     OriginatingTo: `wildfire:user:${p.sender}`,
