@@ -35,8 +35,9 @@ export async function buildInboundContext(
 
   // Try framework context builder — extra gets spread to MsgContext top-level
   try {
-    const { buildChannelInboundEventContext } =
-      await Function('return import("openclaw/plugin-sdk")')() as any;
+    // @ts-ignore — openclaw available at runtime
+    const sdk = await import("openclaw/plugin-sdk/channel-inbound");
+    const { buildChannelInboundEventContext } = sdk;
     return buildChannelInboundEventContext({
       channel: "wildfire",
       accountId: p.accountId,
