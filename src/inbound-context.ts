@@ -59,8 +59,10 @@ export async function buildInboundContext(
         transcript: p.transcript ?? undefined, mediaUrl: p.mediaUrl ?? undefined,
       },
     }) as Record<string, any>;
-  } catch {
-    api.logger?.warn?.("[wildfire] buildChannelInboundEventContext unavailable, using fallback");
+  } catch (e: any) {
+    api.logger?.warn?.(
+      `[wildfire] buildChannelInboundEventContext failed: ${e?.message ?? String(e)}`,
+    );
   }
 
   // Fallback — aligned with primary path
