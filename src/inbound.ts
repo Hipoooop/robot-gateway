@@ -11,6 +11,7 @@ import { shouldRespondToGroupMessage } from "./utils.js";
 import { getClient } from "./clients.js";
 import { WhitelistFilter } from "./whitelist.js";
 import { pushUserSession } from "./redis-cache.js";
+import { buildInboundContext } from "./inbound-context.js";
 
 import {
   TextMessageContent,
@@ -201,56 +202,27 @@ export async function handleIncomingMessage(
 
     const bodyText = transcript || text;
 
-    const ctxPayload: Record<string, any> = {
-      Body: bodyText,
-      RawBody: bodyText,
-      From: isGroup ? `wildfire:group:${conv.target}` : `wildfire:user:${sender}`,
-      To: isGroup ? `wildfire:group:${conv.target}` : `wildfire:user:${sender}`,
-      SessionKey: sessionKey,
-      AccountId: accountId,
-      ChatType: chatType,
-      ConversationLabel: conversationLabel,
-      SenderName: fromLabel,
-      SenderId: senderId,
-      Provider: "wildfire",
-      Surface: "wildfire",
-      MessageSid: `wildfire-${(data.messageId ?? data.msgId ?? data.mid) || randomUUID()}`,
-      Timestamp: timestamp,
-      OriginatingChannel: "wildfire",
-      OriginatingTo: `wildfire:user:${sender}`,
-      RobotId: config.robotId,
-      TenantId: tenantId,
-      TenantName: tenantName ?? undefined,
-      CommandAuthorized: true,
-      // expand to MsgContext top-level via buildChannelInboundEventContext extra
-      extra: {
-        tenantId,
-        tenantName: tenantName ?? undefined,
-        robotId: config.robotId,
-        userId: senderUserInfo?.userId ?? sender,
-        displayName: senderUserInfo?.displayName,
-        mobile: senderUserInfo?.mobile,
-        isGroup,
-        conversationId: conv.target,
-        messageType: payloadType,
-        mediaUrl: mediaUrl ?? null,
-        payloadExtra: extra,
-        senderUserInfo,
-      },
-      _wildfire: {
-        accountId,
-        isGroup,
-        senderId,
-        conversationId: conv.target,
-        messageType: payloadType,
-        mediaUrl: mediaUrl ?? null,
-        extra,
-        senderUserInfo,
-        robotId: config.robotId,
-        tenantId,
-        tenantName,
-      },
-    };
+    const ctxPayload = await buildInboundContext(api, {
+      bodyText,
+      isGroup,
+      sender,
+      conv,
+      sessionKey,
+      accountId,
+      chatType,
+      conversationLabel,
+      fromLabel,
+      senderId,
+      timestamp,
+      tenantId,
+      tenantName,
+      senderUserInfo,
+      extra,
+      config,
+      route,
+      transcript,
+      mediaUrl,
+    });
 
     if (transcript) {
       ctxPayload.Transcript = transcript;
