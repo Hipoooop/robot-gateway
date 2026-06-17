@@ -28,10 +28,13 @@ export async function buildInboundContext(
   },
 ): Promise<Record<string, any>> {
   const p = params;
+  const fromPath = p.isGroup
+    ? `wildfire:${p.tenantId}:group:${p.conv.target}`
+    : `wildfire:${p.tenantId}:user:${p.sender}`;
+  const senderId_ = `${p.tenantId}:${p.senderId}`;
 
   // Try framework context builder — extra gets spread to MsgContext top-level
   try {
-    // Dynamic import — bypasses TS module resolution for external plugins
     const { buildChannelInboundEventContext } =
       await Function('return import("openclaw/plugin-sdk")')() as any;
     return buildChannelInboundEventContext({
@@ -40,76 +43,39 @@ export async function buildInboundContext(
       provider: "wildfire",
       surface: "wildfire",
       timestamp: p.timestamp,
-      from: p.isGroup
-        ? `wildfire:${p.tenantId}:group:${p.conv.target}`
-        : `wildfire:${p.tenantId}:user:${p.sender}`,
-      sender: {
-        id: `${p.tenantId}:${p.senderId}`,
-        label: p.fromLabel,
-      },
-      conversation: {
-        id: `${p.tenantId}:${p.conv.target}`,
-        label: p.conversationLabel,
-        type: p.chatType as any,
-      },
-      route: {
-        agentId: p.route?.agentId ?? "main",
-        sessionKey: p.sessionKey,
-      },
-      reply: {
-        to: p.isGroup
-          ? `wildfire:${p.tenantId}:group:${p.conv.target}`
-          : `wildfire:${p.tenantId}:user:${p.sender}`,
-        originatingTo: `wildfire:user:${p.sender}`,
-      },
-      message: {
-        body: p.bodyText,
-        rawBody: p.bodyText,
-      },
+      from: fromPath,
+      sender: { id: senderId_, displayLabel: p.fromLabel },
+      conversation: { id: `${p.tenantId}:${p.conv.target}`, label: p.conversationLabel, kind: p.chatType as any },
+      route: { agentId: p.route?.agentId ?? "main", routeSessionKey: p.sessionKey, accountId: p.accountId },
+      reply: { to: fromPath, originatingTo: `wildfire:user:${p.sender}` },
+      message: { body: p.bodyText, rawBody: p.bodyText },
       extra: {
-        tenantId: p.tenantId,
-        tenantName: p.tenantName ?? undefined,
-        robotId: p.config.robotId,
-        userId: p.senderUserInfo?.userId ?? p.sender,
-        displayName: p.senderUserInfo?.displayName,
-        mobile: p.senderUserInfo?.mobile,
-        isGroup: p.isGroup,
-        conversationId: p.conv.target,
-        payloadExtra: p.extra,
-        senderUserInfo: p.senderUserInfo,
-        transcript: p.transcript ?? undefined,
-        mediaUrl: p.mediaUrl ?? undefined,
+        tenantId: p.tenantId, tenantName: p.tenantName ?? undefined,
+        robotId: p.config.robotId, userId: p.senderUserInfo?.userId ?? p.sender,
+        displayName: p.senderUserInfo?.displayName, mobile: p.senderUserInfo?.mobile,
+        isGroup: p.isGroup, conversationId: p.conv.target,
+        payloadExtra: p.extra, senderUserInfo: p.senderUserInfo,
+        transcript: p.transcript ?? undefined, mediaUrl: p.mediaUrl ?? undefined,
       },
     }) as Record<string, any>;
   } catch {
     api.logger?.warn?.("[wildfire] buildChannelInboundEventContext unavailable, using fallback");
   }
 
-  // Fallback: manual ctxPayload
+  // Fallback — aligned with primary path
   const ctx: Record<string, any> = {
-    Body: p.bodyText,
-    RawBody: p.bodyText,
-    From: p.isGroup
-      ? `wildfire:group:${p.conv.target}`
-      : `wildfire:user:${p.sender}`,
-    To: p.isGroup
-      ? `wildfire:group:${p.conv.target}`
-      : `wildfire:user:${p.sender}`,
-    SessionKey: p.sessionKey,
-    AccountId: p.accountId,
-    ChatType: p.chatType,
-    ConversationLabel: p.conversationLabel,
-    SenderName: p.fromLabel,
-    SenderId: p.senderId,
-    Provider: "wildfire",
-    Surface: "wildfire",
-    MessageSid: `wildfire-${Date.now()}`,
-    Timestamp: p.timestamp,
-    OriginatingChannel: "wildfire",
-    OriginatingTo: `wildfire:user:${p.sender}`,
-    RobotId: p.config.robotId,
-    TenantId: p.tenantId,
+    Body: p.bodyText, RawBody: p.bodyText,
+    From: fromPath, To: fromPath,
+    SessionKey: p.sessionKey, AccountId: p.accountId,
+    ChatType: p.chatType, ConversationLabel: p.conversationLabel,
+    SenderName: p.fromLabel, SenderId: senderId_,
+    Provider: "wildfire", Surface: "wildfire",
+    MessageSid: `wildfire-${Date.now()}`, Timestamp: p.timestamp,
+    OriginatingChannel: "wildfire", OriginatingTo: `wildfire:user:${p.sender}`,
+    RobotId: p.config.robotId, TenantId: p.tenantId,
     TenantName: p.tenantName ?? undefined,
+    UserId: p.senderUserInfo?.userId ?? p.sender,
+    DisplayName: p.senderUserInfo?.displayName,
     CommandAuthorized: true,
   };
   if (p.transcript) ctx.Transcript = p.transcript;
