@@ -120,6 +120,7 @@ export async function pushUserSession(
     const pipeline = client.pipeline();
     const flat = flattenRecord(record);
     flat["robotId"] = config.robotId || "";
+    flat["tenantId"] = tenantId;
     if (tenantName) flat["tenantName"] = String(tenantName);
 
     pipeline.hset(userHashKey, flat);
