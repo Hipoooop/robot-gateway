@@ -37,7 +37,7 @@ export async function buildInboundContext(
   // Try framework context builder — extra gets spread to MsgContext top-level
   try {
     // @ts-ignore — openclaw available at runtime
-    const sdk = await import("openclaw/plugin-sdk/channel-inbound");
+    const sdk = await import("openclaw/plugin-sdk/conversation-runtime");
     const { buildChannelInboundEventContext } = sdk;
     return buildChannelInboundEventContext({
       channel: "wildfire",

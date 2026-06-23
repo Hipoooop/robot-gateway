@@ -20,7 +20,7 @@ import {
   Conversation,
 } from "@wildfirechat/server-sdk";
 // @ts-ignore
-import { recordInboundSession } from "openclaw/plugin-sdk/channel-inbound";
+import { recordInboundSession } from "openclaw/plugin-sdk/conversation-runtime";
 
 // Message type constants
 const MESSAGE_TYPE_TEXT = 1;
