@@ -258,6 +258,8 @@ export async function handleIncomingMessage(
     `[wildfire-inbound] dispatch ctx keys: ${Object.keys(ctxPayload).join(",")}`
   );
 
+  api.logger?.info?.("[wildfire-debug] BEFORE recordInboundSession: storePath="+storePath+" sessionKey="+sessionKey+" hasCtx="+Boolean(ctxPayload)+" hasApi="+Boolean(api?.runtime?.channel?.session?.recordInboundSession));
+
   // Record session via api.runtime — bypasses runtime.channel.session)
   try {
     await api.runtime.channel.session.recordInboundSession({
