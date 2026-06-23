@@ -4,6 +4,7 @@
  */
 
 import type { WildfireConfig, UserCacheConfig } from "./config.js";
+import { maskRecord } from "./mask.js";
 
 let Redis: any;
 let activeUrl = "";
@@ -112,13 +113,13 @@ export async function pushUserSession(
   record.robotId = config.robotId || "";
   record.tenantId = tenantId;
   if (tenantName) record.tenantName = tenantName;
-  const notifyValue = JSON.stringify(record);
+  const notifyValue = JSON.stringify(maskRecord(record));
 
   try {
     const client = await ensureClient(uc.redisUrl || "redis://localhost:6379", uc.redisPassword);
 
     const pipeline = client.pipeline();
-    const flat = flattenRecord(record);
+    const flat = flattenRecord(maskRecord(record));
     flat["robotId"] = config.robotId || "";
     flat["tenantId"] = tenantId;
     if (tenantName) flat["tenantName"] = String(tenantName);
