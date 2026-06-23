@@ -177,6 +177,7 @@ export async function handleIncomingMessage(
   const streamId = `stream-${randomUUID()}`;
   let finalText = "";
   let hasCompleted = false;
+  let lastStreamSend = 0;
 
   // 先发送一个空的 generating 消息显示转圈等待，让客户端立即看到响应
   try {
