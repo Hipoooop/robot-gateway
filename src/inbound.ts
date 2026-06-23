@@ -311,7 +311,7 @@ export async function handleIncomingMessage(
           api.logger?.debug?.(`[wildfire-debug] onPartialReply: ${payload.text.substring(0, 30)}...`);
 
           try {
-            // 发送 generating 消息更新同一条消息
+            if (Date.now()-lastStreamSend<500) return; lastStreamSend=Date.now(); // 发送 generating 消息更新同一条消息
             await sendStreamingReply(sender, conv, payload.text, streamId, "generating", accountId, extra, api);
           } catch (e: any) {
             api.logger?.error?.(`[wildfire] stream update failed: ${e.message}`);
