@@ -19,8 +19,7 @@ import {
   StreamingTextGeneratedMessageContent,
   Conversation,
 } from "@wildfirechat/server-sdk";
-// @ts-ignore
-import { recordInboundSession } from "openclaw/plugin-sdk/conversation-runtime";
+import { recordInboundSession } from "./session.js";
 
 // Message type constants
 const MESSAGE_TYPE_TEXT = 1;
@@ -258,6 +257,11 @@ export async function handleIncomingMessage(
   api.logger?.debug?.(
     `[wildfire-inbound] dispatch ctx keys: ${Object.keys(ctxPayload).join(",")}`
   );
+
+  // DEBUG: inspect runtime API
+  api.logger?.info?.("[wildfire-debug] runtime keys: "+Object.keys(api.runtime||{}).join(","));
+  api.logger?.info?.("[wildfire-debug] channel keys: "+Object.keys((api.runtime||{}).channel||{}).join(","));
+  api.logger?.info?.("[wildfire-debug] session keys: "+Object.keys(((api.runtime||{}).channel||{}).session||{}).join(","));
 
   // Record session (direct SDK import — bypasses runtime.channel.session)
   try {
