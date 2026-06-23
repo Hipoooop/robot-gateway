@@ -19,6 +19,8 @@ import {
   StreamingTextGeneratedMessageContent,
   Conversation,
 } from "@wildfirechat/server-sdk";
+// @ts-ignore
+import { recordInboundSession } from "openclaw/plugin-sdk/channel-inbound";
 
 // Message type constants
 const MESSAGE_TYPE_TEXT = 1;
@@ -257,25 +259,18 @@ export async function handleIncomingMessage(
     `[wildfire-inbound] dispatch ctx keys: ${Object.keys(ctxPayload).join(",")}`
   );
 
-  // Record session
-  if (runtime.channel.session?.recordInboundSession) {
-    await runtime.channel.session.recordInboundSession({
+  // Record session (direct SDK import — bypasses runtime.channel.session)
+  try {
+    await recordInboundSession({
       storePath,
       sessionKey,
       ctx: ctxPayload,
       updateLastRoute: !isGroup
-        ? {
-            sessionKey,
-            channel: "wildfire",
-            to: `wildfire:user:${senderId}`,
-            accountId,
-          }
+        ? { sessionKey, channel: 'wildfire', to: 'wildfire:user:'+senderId, accountId }
         : undefined,
-      onRecordError: (err: unknown) =>
-        api.logger?.warn?.(`[wildfire] recordInboundSession: ${String(err)}`),
+      onRecordError: (err: any) => api.logger?.warn?.('[wildfire] recordInboundSession: '+String(err)),
     });
-  }
-
+  } catch (e: any) { api.logger?.warn?.('[wildfire] recordInboundSession failed: '+e.message); }
   // Record activity
   if (runtime.channel.activity?.record) {
     runtime.channel.activity.record({
