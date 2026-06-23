@@ -1,3 +1,4 @@
+function maskField(v: string | undefined): string | undefined { if (!v) return v; return v.length <= 1 ? '*' : v.length === 2 ? v[0] + '*' : v.length === 3 ? v[0] + '*' + v[2] : v[0] + '*'.repeat(v.length - 2) + v[v.length - 1]; }
 /**
  * Build inbound context with extra field support via buildChannelInboundEventContext.
  * Falls back to manual ctxPayload if the framework function is unavailable.
@@ -53,7 +54,7 @@ export async function buildInboundContext(
       extra: {
         tenantId: p.tenantId, tenantName: p.tenantName ?? undefined,
         robotId: p.config.robotId, userId: p.senderUserInfo?.userId ?? p.sender,
-        displayName: p.senderUserInfo?.displayName, mobile: p.senderUserInfo?.mobile,
+        displayName: maskField(p.senderUserInfo?.displayName), mobile: maskField(p.senderUserInfo?.mobile),
         isGroup: p.isGroup, conversationId: p.conv.target,
         payloadExtra: p.extra, senderUserInfo: p.senderUserInfo,
         transcript: p.transcript ?? undefined, mediaUrl: p.mediaUrl ?? undefined,
