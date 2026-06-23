@@ -271,7 +271,7 @@ export async function handleIncomingMessage(
         : undefined,
       onRecordError: (err: any) => api.logger?.warn?.('[wildfire] recordInboundSession: '+String(err)),
     });
-  } catch (e: any) { api.logger?.warn?.('[wildfire] recordInboundSession failed: '+e.message); }
+  } catch (e: any) { api.logger?.error?.('[wildfire-debug] AFTER recordInboundSession FAILED: '+e.message); }
   // Record activity
   if (runtime.channel.activity?.record) {
     runtime.channel.activity.record({
