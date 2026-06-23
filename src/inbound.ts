@@ -269,10 +269,13 @@ export async function handleIncomingMessage(
       updateLastRoute: !isGroup
         ? { sessionKey, channel: 'wildfire', to: 'wildfire:user:'+senderId, accountId }
         : undefined,
-      onRecordError: (err: any) => api.logger?.warn?.('[wildfire] recordInboundSession: '+String(err)),
+    onRecordError: (err: any) => api.logger?.warn?.('[wildfire] recordInboundSession: '+String(err)),
     });
-  } catch (e: any) { api.logger?.error?.('[wildfire-debug] AFTER recordInboundSession FAILED: '+e.message); }
-  // Record activity
+    api.logger?.info?.('[wildfire-debug] AFTER recordInboundSession SUCCESS');
+  } catch (e: any) {
+    api.logger?.error?.('[wildfire-debug] AFTER recordInboundSession FAILED: '+e.message);
+  }
+// Record activity
   if (runtime.channel.activity?.record) {
     runtime.channel.activity.record({
       channel: "wildfire",
