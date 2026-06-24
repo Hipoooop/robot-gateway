@@ -132,12 +132,8 @@ export async function handleIncomingMessage(
   const tenantName = config.tenantNamePath
     ? resolveTenantId(data, config.tenantNamePath)
     : null;
-  const platformId = config.platformIdPath
-    ? resolveTenantId(data, config.platformIdPath)
-    : null;
-  const platformName = config.platformNamePath
-    ? resolveTenantId(data, config.platformNamePath)
-    : null;
+  const platformId = resolveTenantId(data, config.platformIdPath || "payload.extra.platformId");
+  const platformName = resolveTenantId(data, config.platformNamePath || "payload.extra.platformName");
 
   const baseSessionKey = isGroup
     ? `wildfire:group:${tenantId}:${conv.target}`.toLowerCase()
