@@ -173,7 +173,8 @@ export async function handleIncomingMessage(
 
     const chatType = isGroup ? "group" : "direct";
     const senderUserInfo = data.senderUserInfo ?? null;
-    const fromLabel = senderUserInfo?.displayName || senderUserInfo?.name || String(sender);
+    let fromLabel = senderUserInfo?.displayName || senderUserInfo?.name || String(sender);
+    if (tenantName) fromLabel = `[${tenantName}] ${fromLabel}`;
     const conversationLabel = isGroup ? `group:${conv.target}` : fromLabel;
     const senderId = `${platformId||"default"}:${tenantId}:${sender}`;
     const timestamp = data.timestamp ?? Date.now();
