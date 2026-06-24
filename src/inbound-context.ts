@@ -32,8 +32,8 @@ export async function buildInboundContext(
 ): Promise<Record<string, any>> {
   const p = params;
   const fromPath = p.isGroup
-    ? `wildfire:${p.tenantId}:group:${p.conv.target}`
-    : `wildfire:${p.tenantId}:user:${p.sender}`;
+    ? `wildfire:${p.platformId||"default"}:${p.tenantId}:group:${p.conv.target}`
+    : `wildfire:${p.platformId||"default"}:${p.tenantId}:user:${p.sender}`;
   const senderId_ = `${p.tenantId}:${p.senderId}`;
 
   // Fallback — aligned with primary path
