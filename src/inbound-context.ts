@@ -26,6 +26,8 @@ export async function buildInboundContext(
     route: { agentId: string; sessionKey: string } | null;
     transcript?: string;
     mediaUrl?: string;
+    platformId?: string;
+    platformName?: string;
   },
 ): Promise<Record<string, any>> {
   const p = params;
@@ -44,7 +46,7 @@ export async function buildInboundContext(
     Provider: "wildfire", Surface: "wildfire",
     MessageSid: `wildfire-${Date.now()}`, Timestamp: p.timestamp,
     OriginatingChannel: "wildfire", OriginatingTo: `wildfire:user:${p.sender}`,
-    RobotId: p.config.robotId, TenantId: p.tenantId,
+    RobotId: p.config.robotId, TenantId: p.tenantId, PlatformId: p.platformId,
     TenantName: p.tenantName ?? undefined,
     UserId: p.senderUserInfo?.userId ?? p.sender,
     DisplayName: p.senderUserInfo?.displayName,

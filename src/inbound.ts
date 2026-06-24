@@ -175,7 +175,7 @@ export async function handleIncomingMessage(
     const senderUserInfo = data.senderUserInfo ?? null;
     const fromLabel = senderUserInfo?.displayName || senderUserInfo?.name || String(sender);
     const conversationLabel = isGroup ? `group:${conv.target}` : `user:${sender}`;
-    const senderId = String(sender);
+    const senderId = `${platformId||"default"}:${tenantId}:${sender}`;
     const timestamp = data.timestamp ?? Date.now();
     const asrServer = resolveAsrServer(config);
 
