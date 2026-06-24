@@ -132,6 +132,12 @@ export async function handleIncomingMessage(
   const tenantName = config.tenantNamePath
     ? resolveTenantId(data, config.tenantNamePath)
     : null;
+  const platformId = config.platformIdPath
+    ? resolveTenantId(data, config.platformIdPath)
+    : null;
+  const platformName = config.platformNamePath
+    ? resolveTenantId(data, config.platformNamePath)
+    : null;
 
   const baseSessionKey = isGroup
     ? `wildfire:group:${tenantId}:${conv.target}`.toLowerCase()
@@ -139,8 +145,8 @@ export async function handleIncomingMessage(
 
   const cfg = api.config;
   const routePeer = isGroup
-    ? { kind: "group" as const, id: `${tenantId}:${conv.target}` }
-    : { kind: "direct" as const, id: `${tenantId}:${sender}` };
+    ? { kind: "group" as const, id: `${platformId||""}:${tenantId}:${conv.target}` }
+    : { kind: "direct" as const, id: `${platformId||""}:${tenantId}:${sender}` };
 
   const route =
     runtime.channel.routing?.resolveAgentRoute?.({
