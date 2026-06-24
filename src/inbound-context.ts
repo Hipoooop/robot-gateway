@@ -34,7 +34,7 @@ export async function buildInboundContext(
   const fromPath = p.isGroup
     ? `wildfire:${p.platformId||"default"}:${p.tenantId}:group:${p.conv.target}`
     : `wildfire:${p.platformId||"default"}:${p.tenantId}:user:${p.sender}`;
-  const senderId_ = `${p.tenantId}:${p.senderId}`;
+  const senderId_ = p.senderId;
 
   // Fallback — aligned with primary path
   const ctx: Record<string, any> = {
