@@ -29,6 +29,8 @@ export interface WildfireConfig {
   };
   tenantIdPath?: string;
   tenantNamePath?: string;
+  platformIdPath?: string;
+  platformNamePath?: string;
   userCache?: UserCacheConfig;
 }
 

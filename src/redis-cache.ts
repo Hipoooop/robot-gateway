@@ -113,6 +113,10 @@ export async function pushUserSession(
   record.robotId = config.robotId || "";
   record.tenantId = tenantId;
   if (tenantName) record.tenantName = tenantName;
+  const platId = pickField(data, config.platformIdPath || "payload.extra.platformId");
+  const platName = pickField(data, config.platformNamePath || "payload.extra.platformName");
+  if (platId) record.platformId = platId;
+  if (platName) record.platformName = platName;
   const notifyValue = JSON.stringify(maskRecord(record));
 
   try {
