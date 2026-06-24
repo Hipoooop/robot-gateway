@@ -145,8 +145,8 @@ export async function handleIncomingMessage(
 
   const cfg = api.config;
   const routePeer = isGroup
-    ? { kind: "group" as const, id: `${platformId||""}:${tenantId}:${conv.target}` }
-    : { kind: "direct" as const, id: `${platformId||""}:${tenantId}:${sender}` };
+    ? { kind: "group" as const, id: `${platformId||"default"}:${tenantId}:${conv.target}` }
+    : { kind: "direct" as const, id: `${platformId||"default"}:${tenantId}:${sender}` };
 
   const route =
     runtime.channel.routing?.resolveAgentRoute?.({
