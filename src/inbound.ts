@@ -129,9 +129,7 @@ export async function handleIncomingMessage(
   }
 
   const tenantId = resolveTenantId(data, config.tenantIdPath) || "default";
-  const tenantName = config.tenantNamePath
-    ? resolveTenantId(data, config.tenantNamePath)
-    : null;
+  const tenantName = resolveTenantId(data, config.tenantNamePath || "payload.extra.orgName");
   const platformId = resolveTenantId(data, config.platformIdPath || "payload.extra.platformId");
   const platformName = resolveTenantId(data, config.platformNamePath || "payload.extra.platformName");
 
