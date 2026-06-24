@@ -40,7 +40,7 @@ async function ensureClient(redisUrl: string, redisPassword?: string): Promise<a
 }
 
 function resolveTenant(data: any, path?: string): string {
-  const fullPath = path || "payload.extra.tenantId";
+  const fullPath = path || "payload.extra.orgId";
   const segments = fullPath.split(".");
   const field = segments.pop()!;
   const jsonStr = segments.reduce((obj: any, key) => obj?.[key], data);
@@ -103,7 +103,7 @@ export async function pushUserSession(
   if (!userId) return;
 
   const tenantId = resolveTenant(data, config.tenantIdPath);
-  const tenantName = pickField(data, config.tenantNamePath || "payload.extra.tenantName");
+  const tenantName = pickField(data, config.tenantNamePath || "payload.extra.orgName");
   const record = pickFields(data, fields);
   if (!record.userId) record.userId = userId;
 

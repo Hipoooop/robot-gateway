@@ -492,7 +492,7 @@ function pickMediaUrl(payload: any): string | undefined {
 }
 
 function resolveTenantId(data: any, path?: string): string | null {
-  const fullPath = path || "payload.extra.tenantId";
+  const fullPath = path || "payload.extra.orgId";
   // Walk to the parent of the last segment (the JSON string field)
   const segments = fullPath.split(".");
   const field = segments.pop()!;
