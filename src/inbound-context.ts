@@ -26,8 +26,8 @@ export async function buildInboundContext(
     route: { agentId: string; sessionKey: string } | null;
     transcript?: string;
     mediaUrl?: string;
-    platformId?: string;
-    platformName?: string;
+    platformId?: string | null;
+    platformName?: string | null;
   },
 ): Promise<Record<string, any>> {
   const p = params;

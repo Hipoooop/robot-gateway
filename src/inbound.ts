@@ -230,6 +230,8 @@ export async function handleIncomingMessage(
       route,
       transcript,
       mediaUrl,
+      platformId,
+      platformName,
     });
 
     if (transcript) {
