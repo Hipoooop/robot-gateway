@@ -109,11 +109,13 @@ export async function pushUserSession(
 
   const notifyKey = uc.notifyKey || "wildfire:new-message";
   const prefix = uc.keyPrefix || "wildfire:tenant-users";
-  const userHashKey = `${prefix}:${tenantId}:${userId}`;
+  const platId = pickField(data, config.platformIdPath || "payload.extra.platformId") || "default";
+  const userHashKey = `${prefix}:${platId}:${tenantId}:${userId}`;
+  // already resolved above
   record.robotId = config.robotId || "";
   record.tenantId = tenantId;
   if (tenantName) record.tenantName = tenantName;
-  const platId = pickField(data, config.platformIdPath || "payload.extra.platformId");
+  // platId already resolved above
   const platName = pickField(data, config.platformNamePath || "payload.extra.platformName");
   if (platId) record.platformId = platId;
   if (platName) record.platformName = platName;
